@@ -130,7 +130,7 @@ int NsfFile_load(struct NsfFile* nsf,FILE* file,bool loadData,bool ignoreversion
 /**
  * Saves the NSF to a file
  */
-int NsfFile_saveFile(struct NsfFile* nsf,const char* path);
+int NsfFile_save(struct NsfFile* nsf,FILE* file);
 
 /**
  * Cleans up memory

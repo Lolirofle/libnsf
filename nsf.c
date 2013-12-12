@@ -52,14 +52,7 @@ void NsfFile_free(struct NsfFile* nsf){
 	free(nsf->ripper);
 }
 
-int NsfFile_loadFile_NESM(struct NsfFile* nsf,FILE* file,bool loadData,bool ignoreversion){
-	fseek(file,0,SEEK_END);
-	int len = ftell(file)-0x80;
-	fseek(file,0,SEEK_SET);
-
-	if(len<1)
-		return -1;
-
+inline int NsfFile_loadFile_NESM(struct NsfFile* nsf,FILE* file,bool loadData,bool ignoreversion){
 	//Read the header (Copy the whole header to the structure)
 	struct NesmHeader header;
 	fread(&header,0x80,1,file);
@@ -98,6 +91,10 @@ int NsfFile_loadFile_NESM(struct NsfFile* nsf,FILE* file,bool loadData,bool igno
 
 	//Read the NSF data
 	if(loadData){
+		fseek(file,0,SEEK_END);
+		int len = ftell(file)-0x80;
+		fseek(file,0x80,SEEK_SET);
+
 		SAFE_NEW(nsf->dataBuffer,uint8_t,len,1);
 		fread(nsf->dataBuffer,len,1,file);
 		nsf->dataBufferSize = len;
@@ -107,10 +104,7 @@ int NsfFile_loadFile_NESM(struct NsfFile* nsf,FILE* file,bool loadData,bool igno
 	return 0;
 }
 
-int NsfFile_loadFile_NSFE(struct NsfFile* nsf,FILE* file,bool loadData){
-	//Reset file read pos
-	fseek(file,0,SEEK_SET);
-
+inline int NsfFile_loadFile_NSFE(struct NsfFile* nsf,FILE* file,bool loadData){
 	//Allocate and initialize vars
 	NsfeChunkType chunkType[CHUNKTYPE_LENGTH];
 	int chunkSize,
@@ -301,6 +295,9 @@ int NsfFile_load(struct NsfFile* nsf,FILE* file,bool loadData,bool ignoreversion
 	char type[HEADERTYPE_LENGTH];
 	fread(&type,4,1,file);
 
+	//Reset file read pos
+	rewind(file);
+
 	if(memcmp(type,HEADERTYPE_NESM,HEADERTYPE_LENGTH)==0)
 		return NsfFile_loadFile_NESM(nsf,file,loadData,ignoreversion);
 	else if(memcmp(type,HEADERTYPE_NSFE,HEADERTYPE_LENGTH)==0)
@@ -320,60 +317,74 @@ int NsfFile_load(struct NsfFile* nsf,FILE* file,bool loadData,bool ignoreversion
 
 //////////////////////////////////////////////////////////////////////////
 //  File saving
-/*
-int NsfFile_saveFile(struct NsfFile* nsf,const char* path){
-	if(!nsf->dataBuffer)
-//if we didn't grab the data, we can't save it
-		return 1;
 
-	FILE* file = fopen(path,"wb");
-	if(file == NULL) return 1;
+inline int NsfFile_saveFile_NESM(struct NsfFile* nsf,FILE* file){
+	//Initialize header data and simply copying from the nsf
+	struct NesmHeader header={
+		.type = HEADERTYPE_NESM,
+		.typeExtra = 0x1A,
+		.version = 1,
+		.trackCount = nsf->trackCount,
+		.initialTrack = nsf->initialTrack + 1,
+		.loadAddress = nsf->loadAddress,
+		.initAddress = nsf->initAddress,
+		.playAddress = nsf->playAddress,
+		.speedNTSC = nsf->ntscPlaySpeed,
+		.speedPAL = nsf->palPlaySpeed,
+		.region = nsf->region,
+		.chipExtensions = nsf->chipExtensions
+	};
 
-	int ret;
-	if(nsf->isExtended)
-ret = SaveFile_NSFE(file);
-	else ret = SaveFile_NESM(file);
+	//Copy strings and arrays of data
+	if(nsf->gameTitle){
+		memcpy(header.gameTitle,nsf->gameTitle,min(strlen(nsf->gameTitle),31));
+		header.gameTitle[31]='\0';
+	}else
+		memset(header.gameTitle,'\0',32);
 
-	fclose(file);
-	return ret;
-}
+	if(nsf->artist){
+		memcpy(header.artist,nsf->artist,min(strlen(nsf->artist),31));
+		header.artist[31]='\0';
+	}else
+		memset(header.artist,'\0',32);
 
-int NsfFile_saveFile_NESM(struct NsfFile* nsf,FILE* file){
-	struct NesmHeader header;
-	ZeroMemory(&header,0x80);
+	if(nsf->copyright){
+		memcpy(header.copyright,nsf->copyright,min(strlen(nsf->copyright),31));
+		header.copyright[31]='\0';
+	}
+	else
+		memset(header.copyright,'\0',32);
 
-	header.type = HEADERTYPE_NESM;
-	header.typeExtra = 0x1A;
-	header.version = 1;
-	header.trackCount = nsf->trackCount;
-	header.initialTrack = nsf->initialTrack + 1;
-	header.loadAddress = nsf->loadAddress;
-	header.initAddress = nsf->initAddress;
-	header.playAddress = nsf->playAddress;
+	if(nsf->bankSwitch)
+		memcpy(header.bankSwitch,nsf->bankSwitch,8);
+	else
+		memset(header.bankSwitch,'\0',8);
 
-	if(nsf->gameTitle)
-memcpy(header.gameTitle,nsf->gameTitle,min(strlen(nsf->gameTitle),31));
-	if(nsf->artist)
-memcpy(header.artist   ,nsf->artist   ,min(strlen(nsf->artist)   ,31));
-	if(nsf->copyright)
-memcpy(header.copyright,nsf->copyright,min(strlen(nsf->copyright),31));
-
-	header.speedNTSC = nsf->ntscPlaySpeed;
-	memcpy(header.bankSwitch,nsf->bankSwitch,8);
-	header.speedPAL = nsf->palPlaySpeed;
-	header.region = nsf->region;
-	header.chipExtensions = nsf->chipExtensions;
-
-	//the header is all set... slap it in
+	//Copy the header to the file
 	fwrite(&header,0x80,1,file);
 
-	//slap in the NSF info
+	//Copy the data
 	fwrite(nsf->dataBuffer,nsf->dataBufferSize,1,file);
 
-	//we're done.. all the other info that isn't recorded is dropped for regular NSFs
 	return 0;
 }
 
+int NsfFile_saveFile_NSFE(struct NsfFile* nsf,FILE* file){return -1;}
+
+int NsfFile_save(struct NsfFile* nsf,FILE* file){
+	if(file==NULL)
+		return -1;
+
+	if(!nsf->dataBuffer)
+		return -2;
+
+	if(nsf->isExtended)
+		return NsfFile_saveFile_NSFE(nsf,file);
+	else
+		return NsfFile_saveFile_NESM(nsf,file);
+}
+
+/*
 int NsfFile_saveFile_NSFE(struct NsfFile* nsf,FILE* file){
 	//////////////////////////////////////////////////////////////////////////
 	// I must admit... NESM files are a bit easier to work with than NSFEs =P
