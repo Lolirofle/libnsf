@@ -86,7 +86,6 @@ struct NsfeInfoChunk{
 
 struct NsfFile{
 	//basic NSF info
-	bool isExtended;    //0 = NSF, 1 = NSFE
 	struct NsfeInfoChunk;
 	
 	//Old NESM speed stuff (blarg)
@@ -130,7 +129,8 @@ int NsfFile_load(struct NsfFile* nsf,FILE* file,bool loadData,bool ignoreversion
 /**
  * Saves the NSF to a file
  */
-int NsfFile_save(struct NsfFile* nsf,FILE* file);
+int NsfFile_saveAsNESM(struct NsfFile* nsf,FILE* file);
+int NsfFile_saveAsNSFE(struct NsfFile* nsf,FILE* file);
 
 /**
  * Cleans up memory

@@ -67,7 +67,6 @@ inline int NsfFile_loadFile_NESM(struct NsfFile* nsf,FILE* file,bool loadData,bo
 
 	//NESM is generally easier to work with (but limited!)
 	//Just move the data over from NesmHeader over to our member data
-	nsf->isExtended     = 0;
 	nsf->region         = header.region & 0x03;
 	nsf->palPlaySpeed   = header.speedPAL; //blarg
 	nsf->ntscPlaySpeed  = header.speedNTSC;//blarg
@@ -140,7 +139,6 @@ inline int NsfFile_loadFile_NSFE(struct NsfFile* nsf,FILE* file,bool loadData){
 			fread(&info,chunkUsed,1,file);
 			fseek(file,chunkSize-chunkUsed,SEEK_CUR);
 
-			nsf->isExtended  = 1;
 			nsf->region = info.region & 3;
 			nsf->loadAddress = info.loadAddress;
 			nsf->initAddress = info.initAddress;
@@ -318,7 +316,10 @@ int NsfFile_load(struct NsfFile* nsf,FILE* file,bool loadData,bool ignoreversion
 //////////////////////////////////////////////////////////////////////////
 //  File saving
 
-inline int NsfFile_saveFile_NESM(struct NsfFile* nsf,FILE* file){
+int NsfFile_saveAsNESM(struct NsfFile* nsf,FILE* file){
+	if(file==NULL)
+		return -1;
+	
 	//Initialize header data and simply copying from the nsf
 	struct NesmHeader header={
 		.type = HEADERTYPE_NESM,
@@ -364,30 +365,18 @@ inline int NsfFile_saveFile_NESM(struct NsfFile* nsf,FILE* file){
 	fwrite(&header,0x80,1,file);
 
 	//Copy the data
-	fwrite(nsf->dataBuffer,nsf->dataBufferSize,1,file);
+	if(nsf->dataBufferSize>0 && nsf->dataBuffer)
+		fwrite(nsf->dataBuffer,nsf->dataBufferSize,1,file);
 
 	return 0;
 }
 
-int NsfFile_saveFile_NSFE(struct NsfFile* nsf,FILE* file){return -1;}
-
-int NsfFile_save(struct NsfFile* nsf,FILE* file){
-	if(file==NULL)
-		return -1;
-
-	if(!nsf->dataBuffer)
-		return -2;
-
-	if(nsf->isExtended)
-		return NsfFile_saveFile_NSFE(nsf,file);
-	else
-		return NsfFile_saveFile_NESM(nsf,file);
-}
+int NsfFile_saveAsNSFE(struct NsfFile* nsf,FILE* file){return -1;}
 
 /*
-int NsfFile_saveFile_NSFE(struct NsfFile* nsf,FILE* file){
-	//////////////////////////////////////////////////////////////////////////
-	// I must admit... NESM files are a bit easier to work with than NSFEs =P
+int NsfFile_saveAsNSFE(struct NsfFile* nsf,FILE* file){
+	if(file==NULL)
+		return -1;
 
 	uint chunkType;
 	int chunkSize;
