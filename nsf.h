@@ -27,22 +27,27 @@
 #include <stdbool.h>
 #include "nsf_region.h"
 
-#define HEADERTYPE_LENGTH 4
-#define HEADERTYPE_NESM "NESM"
-#define HEADERTYPE_NSFE "NSFE"
+#define NSF_HEADERTYPE_LENGTH 4
+#define NSF_HEADERTYPE_NESM "NESM"
+#define NSF_HEADERTYPE_NSFE "NSFE"
 
 typedef char NsfeChunkType;
-#define CHUNKTYPE_LENGTH 4
-#define CHUNKTYPE_INFO  "INFO"
-#define CHUNKTYPE_DATA  "DATA"
-#define CHUNKTYPE_NEND  "NEND"
-#define CHUNKTYPE_PLST  "plst"
-#define CHUNKTYPE_TIME  "time"
-#define CHUNKTYPE_FADE  "fade"
-#define CHUNKTYPE_TLBL  "tlbl"
-#define CHUNKTYPE_AUTH  "auth"
-#define CHUNKTYPE_BANK  "BANK"
+#define NSFE_CHUNKTYPE_LENGTH 4
+#define NSFE_CHUNKTYPE_INFO  "INFO"
+#define NSFE_CHUNKTYPE_DATA  "DATA"
+#define NSFE_CHUNKTYPE_NEND  "NEND"
+#define NSFE_CHUNKTYPE_PLST  "plst"
+#define NSFE_CHUNKTYPE_TIME  "time"
+#define NSFE_CHUNKTYPE_FADE  "fade"
+#define NSFE_CHUNKTYPE_TLBL  "tlbl"
+#define NSFE_CHUNKTYPE_AUTH  "auth"
+#define NSFE_CHUNKTYPE_BANK  "BANK"
 
+/**
+ * The chip extensions field in the NESM header
+ * This structure must have the size 1 byte (sizeof(NsfChipExtensions)=1) with no padding anywhere.
+ * Unfortunately there's no static assert at the moment in C for controlling this.
+ */
 typedef struct NsfChipExtensions{
 	uint8_t VRCVI        :1;
 	uint8_t VRCVII       :1;
@@ -52,8 +57,13 @@ typedef struct NsfChipExtensions{
 	uint8_t sunsoftFME07 :1;
 }NsfChipExtensions;
 
+/**
+ * The header for the NESM format
+ * This structure must have the size 0x80 bytes (sizeof(struct NesmHeader)=0x80) with no padding anywhere.
+ * Unfortunately there's no static assert at the moment in C for controlling this.
+ */
 struct NesmHeader{
-	char     type[HEADERTYPE_LENGTH];
+	char     type[NSF_HEADERTYPE_LENGTH];
 	uint8_t  typeExtra;
 	uint8_t  version;
 	uint8_t  trackCount;
@@ -129,12 +139,12 @@ int NsfFile_load(struct NsfFile* nsf,FILE* file,bool loadData,bool ignoreversion
 /**
  * Saves the NSF to a file
  */
-int NsfFile_saveAsNESM(struct NsfFile* nsf,FILE* file);
-int NsfFile_saveAsNSFE(struct NsfFile* nsf,FILE* file);
+int NsfFile_saveAsNESM(const struct NsfFile* nsf,FILE* file);
+int NsfFile_saveAsNSFE(const struct NsfFile* nsf,FILE* file);
 
 /**
  * Cleans up memory
  */
-void NsfFile_free(struct NsfFile* nsf);
+void NsfFile_free(const struct NsfFile* nsf);
 
 #endif

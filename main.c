@@ -2,6 +2,15 @@
 #include <string.h>
 #include "nsf.h"
 
+void Nsf_printChipExtensions(const NsfChipExtensions* ext,FILE* output){
+	if(ext->VRCVI)       fputs("VRCVI, ",output);
+	if(ext->VRCVII)      fputs("VRCVII, ",output);
+	if(ext->FDS)         fputs("FDS sound, ",output);
+	if(ext->MMC5)        fputs("MMC5 audio, ",output);
+	if(ext->namco106)    fputs("Namco 106, ",output);
+	if(ext->sunsoftFME07)fputs("Sunsoft FME-07, ",output);
+}
+
 int main(int argc,const char* argv[]){
 	if(argc<2)
 		goto Help;
@@ -16,15 +25,17 @@ int main(int argc,const char* argv[]){
 		if(fileLoadingReturnCode!=0)
 			fprintf(stderr,"Error in file loading: %i\n",fileLoadingReturnCode);
 		else{
-			printf("Title: %s\nRegion: %s\nArtist: %s\nCopyright: %s\n\nTracks: %i\nInitial track: %i\n\nRipper: %s\n\n",
+			printf("Title: %s\nRegion: %s\nArtist: %s\nCopyright: %s\n\nTracks: %i\nInitial track: %i\nExtension Chips: ",
 				nsf.gameTitle,
 				nsf.region?"PAL":"NTSC",
 				nsf.artist,
 				nsf.copyright,
 				nsf.trackCount,
-				nsf.initialTrack,
-				nsf.ripper
+				nsf.initialTrack
 			);
+
+			Nsf_printChipExtensions(&nsf.chipExtensions,stdout);
+			printf("\nRipper: %s\n\n",nsf.ripper);
 
 			puts("Tracks:");
 			for(int i=0;i<nsf.trackCount;++i){
@@ -55,7 +66,7 @@ int main(int argc,const char* argv[]){
 		argv+=argc-1;
 
 		FILE* file = fopen(*argv,"rb");
-		int fileLoadingReturnCode=NsfFile_load(&nsf,file,false,false);
+		int fileLoadingReturnCode=NsfFile_load(&nsf,file,true,false);
 
 		if(fileLoadingReturnCode!=0){
 			fprintf(stderr,"Error when loading file `%s`: %i\n",*argv,fileLoadingReturnCode);
@@ -77,7 +88,17 @@ int main(int argc,const char* argv[]){
 						printf("%i\n",nsf.initialTrack);
 					else if(strcmp((*argv)+2,"ripper")==0)
 						puts(nsf.ripper);
-					else
+					else if(strcmp((*argv)+2,"chips")==0){
+						Nsf_printChipExtensions(&nsf.chipExtensions,stdout);
+						putchar('\n');
+					}else if(memcmp((*argv)+2,"output=",7)==0){
+						const char* path=(*argv)+2+7;
+						if(path[0]=='\0')
+							goto Help;
+						FILE* file=fopen(path,"wb");
+						NsfFile_saveAsNESM(&nsf,file);
+						fclose(file);
+					}else
 						fprintf(stderr,"Unknown parameter: `%s`\n",*argv);
 				}else
 					goto Help;
@@ -92,6 +113,6 @@ int main(int argc,const char* argv[]){
 	}
 
 	Help:
-	fputs("Usage: nsfinfo [options ...] <filepath>\nOptions:\n  --title\n     Get game title\n  --region\n     Get region of nsf (e.g. NTSC or PAL)\n  --artist\n     Get artist\n  --copyright\n     Get copyright text\n  --trackcount\n     Get the total of tracks\n  --initialtrack\n     Get the starting track index\n  --ripper\n     Get ripper name",stderr);
+	fputs("Usage: nsfinfo [options ...] <filepath>\nOptions:\n  --title\n     Get game title\n  --region\n     Get region of nsf (e.g. NTSC or PAL)\n  --artist\n     Get artist\n  --copyright\n     Get copyright text\n  --trackcount\n     Get the total of tracks\n  --initialtrack\n     Get the starting track index\n  --chips\n     Get the extension chips required to play the file\n  --ripper\n     Get ripper name\n  --output=<file path>\n     Output to file with specified path\n",stderr);
 	return 1;
 }
