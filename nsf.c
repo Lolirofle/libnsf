@@ -371,137 +371,134 @@ int NsfFile_saveAsNESM(const struct NsfFile* nsf,FILE* file){
 	return 0;
 }
 
-int NsfFile_saveAsNSFE(const struct NsfFile* nsf,FILE* file){return -1;}
+void Nsfe_saveChunk(NsfeChunkType type[NSFE_CHUNKTYPE_LENGTH],void* data,size_t size){
 
-/*
-int NsfFile_saveAsNSFE(struct NsfFile* nsf,FILE* file){
+}
+
+int NsfFile_saveAsNSFE(const struct NsfFile* nsf,FILE* file){
 	if(file==NULL)
 		return -1;
 
-	uint chunkType;
 	int chunkSize;
 	struct NsfeInfoChunk info;
 
-	//write the header
-	chunkType = NSF_HEADERTYPE_NSFE;
-	fwrite(&chunkType,4,1,file);
+	//Header type
+	fwrite(NSF_HEADERTYPE_NSFE,4,1,file);
 
 
-	//write the info chunk
-	chunkType = NSFE_CHUNKTYPE_INFO;
+	//Info chunk
 	chunkSize = sizeof(struct NsfeInfoChunk);
 	info.chipExtensions = nsf->chipExtensions;
-	info.initAddress = nsf->initAddress;
-	info.region = nsf->region;
-	info.loadAddress = nsf->loadAddress;
-	info.playAddress = nsf->playAddress;
-	info.initialTrack = nsf->initialTrack;
-	info.trackCount = nsf->trackCount;
+	info.initAddress    = nsf->initAddress;
+	info.region         = nsf->region;
+	info.loadAddress    = nsf->loadAddress;
+	info.playAddress    = nsf->playAddress;
+	info.initialTrack   = nsf->initialTrack;
+	info.trackCount     = nsf->trackCount;
 
 	fwrite(&chunkSize,4,1,file);
-	fwrite(&chunkType,4,1,file);
+	fwrite(NSFE_CHUNKTYPE_INFO,4,1,file);
 	fwrite(&info,chunkSize,1,file);
 
-	//if we need bankswitching... throw it in
+	//Bankswitching chunk if needed
 	for(chunkSize=0;chunkSize<8;++chunkSize){
 		if(nsf->bankSwitch[chunkSize]){
-			chunkType = NSFE_CHUNKTYPE_BANK;
 			chunkSize = 8;
 			fwrite(&chunkSize,4,1,file);
-			fwrite(&chunkType,4,1,file);
+			fwrite(NSFE_CHUNKTYPE_BANK,4,1,file);
 			fwrite(nsf->bankSwitch,chunkSize,1,file);
 			break;
 		}
 	}
 
-	//if there's a time chunk, slap it in
+	//Time chunk if needed
 	if(nsf->trackTimes){
-		chunkType = NSFE_CHUNKTYPE_TIME;
 		chunkSize = 4 * nsf->trackCount;
 		fwrite(&chunkSize,4,1,file);
-		fwrite(&chunkType,4,1,file);
+		fwrite(NSFE_CHUNKTYPE_TIME,4,1,file);
 		fwrite(nsf->trackTimes,chunkSize,1,file);
 	}
 
-	//slap in a fade chunk if needed
+	//Fade chunk if needed
 	if(nsf->trackFades){
-		chunkType = NSFE_CHUNKTYPE_FADE;
 		chunkSize = 4 * nsf->trackCount;
 		fwrite(&chunkSize,4,1,file);
-		fwrite(&chunkType,4,1,file);
+		fwrite(NSFE_CHUNKTYPE_FADE,4,1,file);
 		fwrite(nsf->trackFades,chunkSize,1,file);
 	}
 
-	//auth!
+	//auth chunk
 	if(nsf->gameTitle || nsf->copyright || nsf->artist || nsf->ripper){
-		chunkType = NSFE_CHUNKTYPE_AUTH;
 		chunkSize = 4;
 		if(nsf->gameTitle)
-chunkSize += strlen(nsf->gameTitle);
+			chunkSize += strlen(nsf->gameTitle);
 		if(nsf->artist)
-chunkSize += strlen(nsf->artist);
+			chunkSize += strlen(nsf->artist);
 		if(nsf->copyright)
-chunkSize += strlen(nsf->copyright);
+			chunkSize += strlen(nsf->copyright);
 		if(nsf->ripper)
-chunkSize += strlen(nsf->ripper);
+			chunkSize += strlen(nsf->ripper);
 		fwrite(&chunkSize,4,1,file);
-		fwrite(&chunkType,4,1,file);
+		fwrite(NSFE_CHUNKTYPE_AUTH,4,1,file);
 
 		if(nsf->gameTitle)
-fwrite(nsf->gameTitle,strlen(nsf->gameTitle) + 1,1,file);
-		else fwrite("",1,1,file);
+			fwrite(nsf->gameTitle,strlen(nsf->gameTitle) + 1,1,file);
+		else
+			putc('\0',file);
+
 		if(nsf->artist)
-fwrite(nsf->artist,strlen(nsf->artist) + 1,1,file);
-		else fwrite("",1,1,file);
+			fwrite(nsf->artist,strlen(nsf->artist) + 1,1,file);
+		else
+			putc('\0',file);
+
 		if(nsf->copyright)
-fwrite(nsf->copyright,strlen(nsf->copyright) + 1,1,file);
-		else fwrite("",1,1,file);
+			fwrite(nsf->copyright,strlen(nsf->copyright) + 1,1,file);
+		else
+			putc('\0',file);
+
 		if(nsf->ripper)
-fwrite(nsf->ripper,strlen(nsf->ripper) + 1,1,file);
-		else fwrite("",1,1,file);
+			fwrite(nsf->ripper,strlen(nsf->ripper) + 1,1,file);
+		else
+			putc('\0',file);
 	}
 
-	//plst
+	//plst chunk
 	if(nsf->playlist){
-		chunkType = NSFE_CHUNKTYPE_PLST;
 		chunkSize = nsf->playlistSize;
 		fwrite(&chunkSize,4,1,file);
-		fwrite(&chunkType,4,1,file);
+		fwrite(NSFE_CHUNKTYPE_PLST,4,1,file);
 		fwrite(nsf->playlist,chunkSize,1,file);
 	}
 
-	//tlbl
+	//tlbl chunk
 	if(nsf->trackLabels){
-		chunkType = NSFE_CHUNKTYPE_TLBL;
 		chunkSize = nsf->trackCount;
 
 		for(int i=0;i<nsf->trackCount;++i)
 			chunkSize += strlen(nsf->trackLabels[i]);
 
 		fwrite(&chunkSize,4,1,file);
-		fwrite(&chunkType,4,1,file);
+		fwrite(NSFE_CHUNKTYPE_TLBL,4,1,file);
 
 		for(int i=0;i<nsf->trackCount;++i){
 			if(nsf->trackLabels[i])
 				fwrite(nsf->trackLabels[i],strlen(nsf->trackLabels[i]) + 1,1,file);
 			else
-				fwrite("",1,1,file);
+				putc('\0',file);
 		}
 	}
 
-	//data
-	chunkType = NSFE_CHUNKTYPE_DATA;
+	//Data
 	chunkSize = nsf->dataBufferSize;
 	fwrite(&chunkSize,4,1,file);
-	fwrite(&chunkType,4,1,file);
+	fwrite(NSFE_CHUNKTYPE_DATA,4,1,file);
 	fwrite(nsf->dataBuffer,chunkSize,1,file);
 
-	//END
-	chunkType = NSFE_CHUNKTYPE_NEND;
+	//end chunk
 	chunkSize = 0;
 	fwrite(&chunkSize,4,1,file);
-	fwrite(&chunkType,4,1,file);
+	fwrite(NSFE_CHUNKTYPE_NEND,4,1,file);
 
 	//w00t
 	return 0;
-}*/
+}

@@ -1,6 +1,6 @@
 CC=gcc
 CFLAGS= -std=gnu99 -Wall -fms-extensions
-LDFLAGS= 
+LDFLAGS= -lpopt
 OUT=nsfinfo
 
 vpath %.c .

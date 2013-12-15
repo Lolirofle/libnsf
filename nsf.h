@@ -111,7 +111,7 @@ struct NsfFile{
 	int      playlistSize;//the size of the above buffer (and the number of tracks in the playlist)
 
 	//Track informations
-	int* trackTimes;//the buffer containing the track times.  NULL if no track times specified.  Otherwise this buffer MUST BE (nTrackCount * sizeof(int)) in size
+	int* trackTimes;//the buffer containing the track times.  NULL if no track times specified. Otherwise this buffer MUST BE (nTrackCount * sizeof(int)) in size
 	int* trackFades;//the buffer containing the track fade times.  NULL if none are specified.  Same conditions as trackTimes
 	char** trackLabels;//the buffer containing track labels.  NULL if there are no labels.  There must be nTrackCount char pointers (or none if NULL).
 	                   //Each pointer must point to it's own buffer containing a string (the length of this buffer doesn't matter, just so long as the string is NULL terminated)
