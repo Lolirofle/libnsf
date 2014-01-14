@@ -48,7 +48,7 @@ typedef char NsfeChunkType;
  * This structure must have the size 1 byte (sizeof(NsfChipExtensions)=1) with no padding anywhere.
  * Unfortunately there's no static assert at the moment in C for controlling this.
  */
-typedef struct NsfChipExtensions{
+typedef struct __attribute__ ((__packed__)) NsfChipExtensions{
 	uint8_t VRCVI        :1;
 	uint8_t VRCVII       :1;
 	uint8_t FDS          :1;
@@ -62,7 +62,7 @@ typedef struct NsfChipExtensions{
  * This structure must have the size 0x80 bytes (sizeof(struct NesmHeader)=0x80) with no padding anywhere.
  * Unfortunately there's no static assert at the moment in C for controlling this.
  */
-struct NesmHeader{
+struct __attribute__ ((__packed__)) NesmHeader{
 	char     type[NSF_HEADERTYPE_LENGTH];
 	uint8_t  typeExtra;
 	uint8_t  version;
@@ -82,7 +82,7 @@ struct NesmHeader{
 	uint8_t  expansion[4];
 };
 
-struct NsfeInfoChunk{
+struct __attribute__ ((__packed__)) NsfeInfoChunk{
 	uint16_t loadAddress;//The address to which the NSF code is loaded to
 	uint16_t initAddress;//The address of the Init routine (called at track change)
 	uint16_t playAddress;//The address of the Play routine (called several times a second)
