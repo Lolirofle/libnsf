@@ -1,6 +1,7 @@
 CC=gcc
-CFLAGS= -std=gnu99 -Wall -fms-extensions
-LDFLAGS= -lpopt
+DEPS=popt
+CFLAGS= -std=gnu99 -Wall -fms-extensions `pkg-config --cflags $(DEPS)`
+LDFLAGS= `pkg-config --libs $(DEPS)`
 OUT=nsfinfo
 
 vpath %.c .
