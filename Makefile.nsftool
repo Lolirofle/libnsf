@@ -1,6 +1,6 @@
 CC=gcc
 DEPS=popt
-CFLAGS= -std=gnu99 -Wall -fms-extensions `pkg-config --cflags $(DEPS)`
+CFLAGS= -std=c99 -Wall -fms-extensions `pkg-config --cflags $(DEPS)`
 LDFLAGS= `pkg-config --libs $(DEPS)`
 OUT=nsfinfo
 

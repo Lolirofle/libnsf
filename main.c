@@ -5,16 +5,16 @@
 #include "nsf.h"
 #include <popt.h>
 
-void Nsf_printChipExtensions(const NsfChipExtensions* ext,FILE* output){
+void Nsf_printChipExtensions(const nsf_chipExtensions* ext,FILE* output){
 	if(ext->VRCVI)       fputs("VRCVI, ",output);
 	if(ext->VRCVII)      fputs("VRCVII, ",output);
 	if(ext->FDS)         fputs("FDS sound, ",output);
 	if(ext->MMC5)        fputs("MMC5 audio, ",output);
-	if(ext->namco106)    fputs("Namco 106, ",output);
-	if(ext->sunsoftFME07)fputs("Sunsoft FME-07, ",output);
+	if(ext->NAMCO106)    fputs("Namco 106, ",output);
+	if(ext->SUNSOFT_FME07)fputs("Sunsoft FME-07, ",output);
 }
 
-struct NsfFile nsf;
+struct nsf_data nsf;
 FILE* in  = NULL,
     * out = NULL;
 
@@ -61,7 +61,7 @@ enum Show{
 
 int main(int argc,const char* argv[]){
 	//Initialize variables
-	memset(&nsf,'\0',sizeof(struct NsfFile));
+	memset(&nsf,'\0',sizeof(struct nsf_data));
 
 	//popt
 	struct poptOption parameterTable[] = {
@@ -216,7 +216,7 @@ int main(int argc,const char* argv[]){
 		return 2;
 	}else{
 		in = fopen(filepath_in,"rb");
-		int fileLoadingReturnCode=NsfFile_load(&nsf,in,output,false);
+		int fileLoadingReturnCode=nsf_data_load(&nsf,in,output,false);
 
 		if(fileLoadingReturnCode!=0){
 			fprintf(stderr,"Error in file loading: %i\n",fileLoadingReturnCode);
@@ -309,14 +309,14 @@ int main(int argc,const char* argv[]){
 			//Output file
 			if(filepath_out){
 				FILE* file=fopen(filepath_out,"wb");
-				//NsfFile_saveAsNESM(&nsf,file);
-				NsfFile_saveAsNSFE(&nsf,file);
+				//nsf_saveNesm(&nsf,file);
+				nsf_data_saveAsNSFE(&nsf,file);
 				fclose(file);
 			}
 		}
 
 		if(in){
-			NsfFile_free(&nsf);
+			nsf_data_free(&nsf);
 			fclose(in);
 		}
 		return fileLoadingReturnCode;

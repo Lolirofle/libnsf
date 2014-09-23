@@ -1,5 +1,5 @@
-#ifndef __LOLIROFLE_NSFTOOL_NSFREGION_H_INCLUDED__
-#define __LOLIROFLE_NSFTOOL_NSFREGION_H_INCLUDED__
+#ifndef __LOLIROFLE_LIBNSF_nsf_region_H_INCLUDED__
+#define __LOLIROFLE_LIBNSF_nsf_region_H_INCLUDED__
 
 #define NTSC_FREQUENCY 1789772.727273f
 #define PAL_FREQUENCY  1652097.692308f
@@ -10,7 +10,7 @@
 #define PAL_NMIRATE  50.006982f //26601714 / (312*1705)
 
 //0 = NTSC, 1 = PAL, 2,3 = mixed NTSC/PAL (interpreted as NTSC)
-typedef uint8_t NsfRegion;
+typedef uint8_t nsf_region;
 #define NSF_REGION_NTSC 0
 #define NSF_REGION_PAL  1
 #define NSF_REGION_MIX1 2
