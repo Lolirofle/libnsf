@@ -3,9 +3,9 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include "nsf.h"
-#include <popt.h>
+#include <popt.h>//TODO: Rewrite to argp because it appears to be GNU standard and more widespread
 
-void Nsf_printChipExtensions(const nsf_chipExtensions* ext,FILE* output){
+void nsf_printChipExtensions(const nsf_chipExtensions* ext,FILE* output){
 	if(ext->VRCVI)       fputs("VRCVI, ",output);
 	if(ext->VRCVII)      fputs("VRCVII, ",output);
 	if(ext->FDS)         fputs("FDS sound, ",output);
@@ -216,7 +216,7 @@ int main(int argc,const char* argv[]){
 		return 2;
 	}else{
 		in = fopen(filepath_in,"rb");
-		int fileLoadingReturnCode=nsf_data_load(&nsf,in,output,false);
+		int fileLoadingReturnCode=nsf_load(&nsf,in,output);
 
 		if(fileLoadingReturnCode!=0){
 			fprintf(stderr,"Error in file loading: %i\n",fileLoadingReturnCode);
@@ -226,18 +226,18 @@ int main(int argc,const char* argv[]){
 		if(argc==2){//If only the filepath is defined (nsfinfo /path/to/file.nsf)
 			printf("Title: %s\nRegion: %s\nArtist: %s\nCopyright: %s\n\nTracks: %i\nInitial track: %i\nExtension Chips: ",
 				nsf.gameTitle,
-				nsf.region?"PAL":"NTSC",
+				nsf.info.region?"PAL":"NTSC",
 				nsf.artist,
 				nsf.copyright,
-				nsf.trackCount,
-				nsf.initialTrack
+				nsf.info.trackCount,
+				nsf.info.initialTrack
 			);
 
-			Nsf_printChipExtensions(&nsf.chipExtensions,stdout);
+			nsf_printChipExtensions(&nsf.info.chipExtensions,stdout);
 			printf("\nRipper: %s\n\n",nsf.ripper);
 
 			puts("Tracks:");
-			for(int i=0;i<nsf.trackCount;++i){
+			for(int i=0;i<nsf.info.trackCount;++i){
 				printf(" %03u:\n  Title:  %s\n  Length: %i ms (%u:%02u min)\n  Fade:   %i ms\n",
 					i,
 					nsf.trackLabels?nsf.trackLabels[i]:"",
@@ -261,9 +261,9 @@ int main(int argc,const char* argv[]){
 
 			if(write.region){
 				if(strcmp(write.region,"NTSC")==0)
-					nsf.region=NSF_REGION_NTSC;
+					nsf.info.region=NSF_REGION_NTSC;
 				else if(strcmp(write.region,"PAL")==0)
-					nsf.region=NSF_REGION_PAL;
+					nsf.info.region=NSF_REGION_PAL;
 				else{
 					printf("Error: Invalid region: `%s`\n",write.region);
 					return 5;
@@ -284,7 +284,7 @@ int main(int argc,const char* argv[]){
 				puts(nsf.gameTitle?:EMPTY_STRING);
 			
 			if(show.region)
-				puts(nsf.region==1?"PAL":"NTSC");
+				puts(nsf.info.region==1?"PAL":"NTSC");
 			
 			if(show.artist)
 				puts(nsf.artist?:EMPTY_STRING);
@@ -293,16 +293,16 @@ int main(int argc,const char* argv[]){
 				puts(nsf.copyright?:EMPTY_STRING);
 			
 			if(show.trackcount)
-				printf("%i\n",nsf.trackCount);
+				printf("%i\n",nsf.info.trackCount);
 			
 			if(show.initialtrack)
-				printf("%i\n",nsf.initialTrack);
+				printf("%i\n",nsf.info.initialTrack);
 			
 			if(show.ripper)
 				puts(nsf.ripper?:EMPTY_STRING);
 			
 			if(show.extensions){
-				Nsf_printChipExtensions(&nsf.chipExtensions,stdout);
+				nsf_printChipExtensions(&nsf.info.chipExtensions,stdout);
 				putchar('\n');
 			}
 
@@ -310,13 +310,13 @@ int main(int argc,const char* argv[]){
 			if(filepath_out){
 				FILE* file=fopen(filepath_out,"wb");
 				//nsf_saveNesm(&nsf,file);
-				nsf_data_saveAsNSFE(&nsf,file);
+				nsf_saveNsfe(&nsf,file);
 				fclose(file);
 			}
 		}
 
 		if(in){
-			nsf_data_free(&nsf);
+			nsf_free(&nsf);
 			fclose(in);
 		}
 		return fileLoadingReturnCode;

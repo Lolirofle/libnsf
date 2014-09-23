@@ -1,4 +1,5 @@
-nsf_info
+libnsf
 ========
 
-Application for viewing and modifying the metadata of the nsf audio format, a format used for storing NES music data.
+A library for handling the NES sound format, a format used to store NES music.
+Also includes an application for viewing and modifying the metadata, nsftool.

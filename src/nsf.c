@@ -23,14 +23,14 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <endian.h>
 #include "nsf.h"
 #include "nsf_region.h"
 
-#ifndef min
-	#define min(a,b) (((a)<(b))?(a):(b))
+#ifndef MIN
+	#define MIN(a,b) (((a)<(b))?(a):(b))
 #endif
 
-#define SAFE_DELETE(ptr) {free(ptr);ptr=NULL;}
 #define SAFE_NEW(ptr,type,n,failureReturn) if(!(ptr=malloc(sizeof(type)*n)))return failureReturn;memset(ptr,'\0',sizeof(type)*n)
 
 void nsf_free(const struct nsf_data* nsf){
@@ -42,7 +42,7 @@ void nsf_free(const struct nsf_data* nsf){
 	free(nsf->trackTimes);
 	free(nsf->trackFades);
 	if(nsf->trackLabels){
-		for(int i=0;i<nsf->trackCount;++i)
+		for(int i=0;i<nsf->info.trackCount;++i)
 			free(nsf->trackLabels[i]);
 		free(nsf->trackLabels);
 	}
@@ -53,165 +53,204 @@ void nsf_free(const struct nsf_data* nsf){
 }
 
 int nsf_loadNesm(struct nsf_data* nsf,FILE* file,bool loadData){
+	//Set to zeroes in case of error (when it is neccessary to free)
+	nsf->dataBuffer  =
+	nsf->playlist    = NULL;
+	nsf->trackTimes  =
+	nsf->trackFades  = NULL;
+	nsf->trackLabels = NULL;
+	nsf->gameTitle   =
+	nsf->artist      =
+	nsf->copyright   =
+	nsf->ripper      = NULL;
+
 	//Read the header (Copy the whole header to the structure)
 	struct nsf_nesmHeader header;
 	fread(&header,sizeof(struct nsf_nesmHeader),1,file);
 
 	//Confirm the header type for NESM
 	if(memcmp(header.type,NSF_HEADERTYPE_NESM,NSF_HEADERTYPE_LENGTH)!=0)
-		return -2;
+		return NSFLOAD_WRONG_HEADER_TYPE;
 	if(header.typeExtra!=0x1A)
-		return -3;
+		return NSFLOAD_WRONG_HEADER_TYPE2;
 	if(header.version!=1)//TODO: Some badly formatted NSFs claims to be above version 1
-		return -4;
+		return NSFLOAD_WRONG_HEADER_VERSION;
 
 	//Copy data from nsf_nesmHeader to nsf_data
-	nsf->region         = header.region & 0x03;
-	nsf->palPlaySpeed   = header.speedPAL; //blarg
-	nsf->ntscPlaySpeed  = header.speedNTSC;//blarg
-	nsf->loadAddress    = header.loadAddress;
-	nsf->initAddress    = header.initAddress;
-	nsf->playAddress    = header.playAddress;
-	nsf->chipExtensions = header.chipExtensions;
+	nsf->info.region         = header.region & 0x03;
+	nsf->palPlaySpeed        = header.speedPAL; //blarg
+	nsf->ntscPlaySpeed       = header.speedNTSC;//blarg
+	nsf->info.loadAddress    = le16toh(header.loadAddress);
+	nsf->info.initAddress    = le16toh(header.initAddress);
+	nsf->info.playAddress    = le16toh(header.playAddress);
+	nsf->info.chipExtensions = header.chipExtensions;
 
-	nsf->trackCount   = header.trackCount;    //0-based number copied
-	nsf->initialTrack = header.initialTrack-1;//1-based number from header converted to 0-based
+	nsf->info.trackCount   = header.trackCount;    //0-based number copied
+	nsf->info.initialTrack = header.initialTrack-1;//1-based number from header converted to 0-based
 
 	memcpy(nsf->bankSwitch,header.bankSwitch,sizeof(header.bankSwitch));
 
 	//Allocate space for strings and +1 for null termination
-	if(!(nsf->gameTitle = malloc(sizeof(header.gameTitle) + sizeof(char)*1)))
-		return 1;
-	if(!(nsf->artist    = malloc(sizeof(header.artist)    + sizeof(char)*1)))
-		return 1;
-	if(!(nsf->copyright = malloc(sizeof(header.copyright) + sizeof(char)*1)))
-		return 1;
+	if(!(nsf->gameTitle = malloc(sizeof(header.gameTitle) + sizeof(char)*1))
+	|| !(nsf->artist    = malloc(sizeof(header.artist)    + sizeof(char)*1))
+	|| !(nsf->copyright = malloc(sizeof(header.copyright) + sizeof(char)*1)))
+		return NSFLOAD_ALLOCATION_ERROR;
 
-	//Copy strings and append a null terminator
+	//Copy strings and append a null terminator in case the string is filling the field
 	memcpy(nsf->gameTitle,header.gameTitle,sizeof(header.gameTitle));
 	nsf->gameTitle[sizeof(header.gameTitle)] = '\0';
 	
 	memcpy(nsf->artist   ,header.artist   ,sizeof(header.artist));
-	nsf->artist   [sizeof(header.artist)] = '\0';
+	nsf->artist   [sizeof(header.artist)]    = '\0';
 	
 	memcpy(nsf->copyright,header.copyright,sizeof(header.copyright));
 	nsf->copyright[sizeof(header.copyright)] = '\0';
 
 	//Read the NSF data
 	if(loadData){
+		//Determine the size of the data
 		fseek(file,0,SEEK_END);
-		int len = ftell(file)-sizeof(struct nsf_nesmHeader);
+		int dataSize = ftell(file)-sizeof(struct nsf_nesmHeader);
 		fseek(file,sizeof(struct nsf_nesmHeader),SEEK_SET);
 
-		SAFE_NEW(nsf->dataBuffer,uint8_t,len,1);
-		fread(nsf->dataBuffer,len,1,file);
-		nsf->dataBufferSize = len;
+		//Allocate space for data
+		if(!(nsf->dataBuffer = malloc(sizeof(uint8_t)*dataSize)))
+			return NSFLOAD_ALLOCATION_ERROR;
+
+		//Read data and set data size
+		fread(nsf->dataBuffer,dataSize,1,file);
+		nsf->dataBufferSize = dataSize;
 	}
 
 	//If the function have reached this point, then it was a successful read
-	return 0;
+	return NSFLOAD_SUCCESS;
 }
 
 int nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData){
-	//Allocate and initialize vars
+	//Data for chunk iterations
 	nsfe_chunkType chunkType[NSFE_CHUNKTYPE_LENGTH];
-	int chunkSize,
-	    chunkUsed,
-	    dataPos = 0;
+	uint32_t chunkSize;
+	int chunkUsed;
+
+	//Checks for single chunks
 	bool infoFound = false,
-	     bankFound = false;
+	     bankFound = false,
+	     dataFound = false;
 
-	struct nsfe_infoChunk info;
-	memset(&info,'\0',sizeof(struct nsfe_infoChunk));
-	info.trackCount = 1;//Default values
-
-	//Read the header type
-	fread(chunkType,4,1,file);
+	{//Confirm the header type for NSFE
+		char headerType[NSF_HEADERTYPE_LENGTH];
+		if(fread(headerType,1,NSF_HEADERTYPE_LENGTH,file)!=NSF_HEADERTYPE_LENGTH
+		|| memcmp(headerType,NSF_HEADERTYPE_NSFE,NSF_HEADERTYPE_LENGTH)!=0)
+			return NSFLOAD_WRONG_HEADER_TYPE;
+	}
 
 	//Begin reading chunks
 	while(true){
 		if(feof(file))
-			return -1;
+			return NSFLOAD_EOF_WITHOUT_NENDCHUNK;
 
-		fread(&chunkSize,4,1,file);
-		fread(chunkType,4,1,file);
+		//Read chunk size and chunk type
+		fread(&chunkSize,sizeof(chunkSize),1,file);
+		chunkSize = le32toh(chunkSize);
+		fread(chunkType,NSFE_CHUNKTYPE_LENGTH,1,file);
 
+		//Determine which chunk type it is
 		if(memcmp(chunkType,NSFE_CHUNKTYPE_INFO,NSFE_CHUNKTYPE_LENGTH)==0){
-			if(infoFound)//Restrict to one info chunk
-				return -2;
-			if(chunkSize<8)//Restrict to a minimum size of a chunk
-				return -3;
+			//Restrict to one of this type of chunk
+			if(infoFound)
+				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
+			//Restrict to a minimum size of this chunk
+			if(chunkSize<8)
+				return NSFLOAD_TOO_SMALL_CHUNK;
 
 			infoFound = true;
-			chunkUsed = min((int)sizeof(struct nsfe_infoChunk),chunkSize);
+			
+			//Default value
+			memset(&nsf->info,'\0',sizeof(struct nsfe_infoChunk));
+			nsf->info.trackCount = 1;
 
-			fread(&info,chunkUsed,1,file);
+			chunkUsed = MIN((uint32_t)sizeof(struct nsfe_infoChunk),chunkSize);
+
+			//Read data, fixing endian
+			fread(&nsf->info,chunkUsed,1,file);
+			nsf->info.loadAddress = le16toh(nsf->info.loadAddress);
+			nsf->info.initAddress = le16toh(nsf->info.initAddress);
+			nsf->info.playAddress = le16toh(nsf->info.playAddress);
+			
 			fseek(file,chunkSize-chunkUsed,SEEK_CUR);
-
-			nsf->region = info.region & 3;
-			nsf->loadAddress = info.loadAddress;
-			nsf->initAddress = info.initAddress;
-			nsf->playAddress = info.playAddress;
-			nsf->chipExtensions = info.chipExtensions;
-			nsf->trackCount = info.trackCount;
-			nsf->initialTrack = info.initialTrack;
 
 			nsf->palPlaySpeed  = (uint16_t)(1000000/PAL_NMIRATE); //blarg
 			nsf->ntscPlaySpeed = (uint16_t)(1000000/NTSC_NMIRATE);//blarg
 		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_DATA,NSFE_CHUNKTYPE_LENGTH)==0){
+			//The info chunk must be defined before this chunk
 			if(!infoFound)
-				return -4;
-			if(dataPos)
-				return -5;
+				return NSFLOAD_REQ_CHUNK_NOT_DEFINED_YET;
+			//Restrict to one data chunk
+			if(dataFound)
+				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
+			//Restrict to a minimum size of this chunk
 			if(chunkSize<1)
-				return -6;
+				return NSFLOAD_TOO_SMALL_CHUNK;
 
-			nsf->dataBufferSize = chunkSize;
-			dataPos = ftell(file);
+			dataFound = true;
 
-			fseek(file,chunkSize,SEEK_CUR);
+			//Load the data if necessary
+			if(loadData){
+				nsf->dataBufferSize = chunkSize;
+				SAFE_NEW(nsf->dataBuffer,uint8_t,nsf->dataBufferSize,1);
+				fread(nsf->dataBuffer,nsf->dataBufferSize,1,file);
+			}else{
+				nsf->dataBufferSize = 0;
+				fseek(file,chunkSize,SEEK_CUR);
+			}
 		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_NEND,NSFE_CHUNKTYPE_LENGTH)==0){
 			break;
-		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_TIME,NSFE_CHUNKTYPE_LENGTH)==0){
+		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_TIME,NSFE_CHUNKTYPE_LENGTH)==0){//TODO: Endian
+			//The info chunk must be defined before this chunk
 			if(!infoFound)
-				return -7;
+				return NSFLOAD_REQ_CHUNK_NOT_DEFINED_YET;
+			//Restrict to one of this type of chunk
 			if(nsf->trackTimes)
-				return -8;
+				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
 
-			SAFE_NEW(nsf->trackTimes,int,nsf->trackCount,1);
-			chunkUsed = min(chunkSize/4,nsf->trackCount);
+			SAFE_NEW(nsf->trackTimes,int,nsf->info.trackCount,1);
+			chunkUsed = MIN(chunkSize/4,nsf->info.trackCount);
 
 			fread(nsf->trackTimes,chunkUsed,4,file);
 			fseek(file,chunkSize-(chunkUsed*4),SEEK_CUR);
 
-			for(;chunkUsed<nsf->trackCount;++chunkUsed)
-				nsf->trackTimes[chunkUsed] = -1;	//negative signals to use default time
-		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_FADE,NSFE_CHUNKTYPE_LENGTH)==0){
+			while(chunkUsed < nsf->info.trackCount)
+				nsf->trackTimes[chunkUsed++] = -1;	//negative signals to use default time
+		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_FADE,NSFE_CHUNKTYPE_LENGTH)==0){//TODO: Endian
+			//The info chunk must be defined before this chunk
 			if(!infoFound)
-				return -9;
+				return NSFLOAD_REQ_CHUNK_NOT_DEFINED_YET;
+			//Restrict to one of this type of chunk
 			if(nsf->trackFades)
-				return -10;
+				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
 
-			SAFE_NEW(nsf->trackFades,int,nsf->trackCount,1);
-			chunkUsed = min(chunkSize / 4,nsf->trackCount);
+			SAFE_NEW(nsf->trackFades,int,nsf->info.trackCount,1);
+			chunkUsed = MIN(chunkSize / 4,nsf->info.trackCount);
 
 			fread(nsf->trackFades,chunkUsed,4,file);
 			fseek(file,chunkSize - (chunkUsed * 4),SEEK_CUR);
 
-			for(;chunkUsed<nsf->trackCount;++chunkUsed)
+			for(;chunkUsed<nsf->info.trackCount;++chunkUsed)
 				nsf->trackFades[chunkUsed] = -1;	//negative signals to use default time
 		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_BANK,NSFE_CHUNKTYPE_LENGTH)==0){
+			//Restrict to one of this type of chunk
 			if(bankFound)
-				return -11;
+				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
 
-			bankFound = 1;
-			chunkUsed = min(8,chunkSize);
+			bankFound = true;
+			chunkUsed = MIN(8,chunkSize);
 
 			fread(nsf->bankSwitch,chunkUsed,1,file);
 			fseek(file,chunkSize - chunkUsed,SEEK_CUR);
 		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_PLST,NSFE_CHUNKTYPE_LENGTH)==0){
+			//Restrict to one of this type of chunk
 			if(nsf->playlist)
-				return -12;
+				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
 
 			nsf->playlistSize = chunkSize;
 			if(nsf->playlistSize < 1)
@@ -220,85 +259,77 @@ int nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData){
 			SAFE_NEW(nsf->playlist,uint8_t,nsf->playlistSize,1);
 			fread(nsf->playlist,chunkSize,1,file);
 		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_AUTH,NSFE_CHUNKTYPE_LENGTH)==0){
+			//Restrict to one of this type of chunk
 			if(nsf->gameTitle)
-				return -13;
-
-			char*		buffer;
-			char*		ptr;
-			SAFE_NEW(buffer,char,chunkSize + 4,1);
-
-			fread(buffer,chunkSize,1,file);
-			ptr = buffer;
-
-			char** ar[4] = {&nsf->gameTitle,&nsf->artist,&nsf->copyright,&nsf->ripper};
-			for(int i=0;i<4;++i){
-				chunkUsed = strlen(ptr) + 1;
-				*ar[i] = malloc(chunkUsed);
-				if(!*ar[i]) { SAFE_DELETE(buffer); return 0; }
-				memcpy(*ar[i],ptr,chunkUsed);
-				ptr += chunkUsed;
-			}
-			SAFE_DELETE(buffer);
-		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_TLBL,NSFE_CHUNKTYPE_LENGTH)==0){
-			if(!infoFound)
-				return -14;
-			if(nsf->trackLabels)
-				return -15;
-
-			SAFE_NEW(nsf->trackLabels,char*,nsf->trackCount,1);
+				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
 
 			char* buffer;
 			char* ptr;
-			SAFE_NEW(buffer,char,chunkSize + nsf->trackCount,1);
+			SAFE_NEW(buffer,char,chunkSize + 4,1);
+
+			fread(buffer,chunkSize,1,file);//TODO: Use fgets
+			ptr = buffer;
+
+			char** ar[4] = {&nsf->gameTitle,&nsf->artist,&nsf->copyright,&nsf->ripper};//TODO: ar as in array reader? Why?
+			for(int i=0;i<4;++i){
+				chunkUsed = strlen(ptr) + 1;
+				*ar[i] = malloc(chunkUsed);
+				if(!*ar[i]) { free(buffer); return 0; }//TODO: What? Why return here?
+				memcpy(*ar[i],ptr,chunkUsed);
+				ptr += chunkUsed;
+			}
+			free(buffer);
+		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_TLBL,NSFE_CHUNKTYPE_LENGTH)==0){
+			//The info chunk must be defined before this chunk
+			if(!infoFound)
+				return NSFLOAD_REQ_CHUNK_NOT_DEFINED_YET;
+			//Restrict to one of this type of chunk
+			if(nsf->trackLabels)
+				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
+
+			SAFE_NEW(nsf->trackLabels,char*,nsf->info.trackCount,1);
+
+			char* buffer;
+			char* ptr;
+			SAFE_NEW(buffer,char,chunkSize + nsf->info.trackCount,1);
 
 			fread(buffer,chunkSize,1,file);
 			ptr = buffer;
 
-			for(int i=0;i<nsf->trackCount;++i){
+			for(int i=0;i<nsf->info.trackCount;++i){
 				chunkUsed = strlen(ptr) + 1;
 				nsf->trackLabels[i] = malloc(chunkUsed);
 				if(!nsf->trackLabels[i]){
-					SAFE_DELETE(buffer);
-					return 0;
+					free(buffer);
+					return -1;//TODO: What? Why return here?
 				}
 				memcpy(nsf->trackLabels[i],ptr,chunkUsed);
 				ptr += chunkUsed;
 			}
-			SAFE_DELETE(buffer);
+			free(buffer);
 		}else{//Unknown chunk
-			if(chunkType[0]>='A' && chunkType[0]<='Z')//If it is a required chunk, don't continue
-				return -16;
-			//otherwise, just skip it
+			//If it is a required chunk, stop
+			if(chunkType[0]>='A' && chunkType[0]<='Z')
+				return NSFLOAD_UNKNOWN_REQ_CHUNK;
+			//Otherwise, skip it
 			fseek(file,chunkSize,SEEK_CUR);
 		}
 	}
 
-	//if we exited the while loop without a 'return', we must have hit an NEND chunk
-	//if this is the case, the file was layed out as it was expected.
-	//now.. make sure we found both an info chunk, AND a data chunk... since these are
-	//minimum requirements for a valid NSFE file
-	if(!infoFound)
-		return -17;
-	if(!dataPos)
-		return -18;
+	//If we exited the while loop without a 'return', we must have hit an NEND chunk, then the file was layed out as it was expected.
+	//Minimum requirements for a valid NSFE file
+		//The info chunk must be defined before having finished reading all the chunks
+		if(!infoFound)
+			return NSFLOAD_REQ_CHUNK_NOT_DEFINED_YET;
+		//The data chunk must be defined before having finished reading all the chunks
+		if(!dataFound)
+			return NSFLOAD_REQ_CHUNK_NOT_DEFINED_YET;
 
-	//if both those chunks existed, this file is valid.  Load the data if it's needed
-	if(loadData){
-		fseek(file,dataPos,SEEK_SET);
-		SAFE_NEW(nsf->dataBuffer,uint8_t,nsf->dataBufferSize,1);
-		fread(nsf->dataBuffer,nsf->dataBufferSize,1,file);
-	}
-	else
-		nsf->dataBufferSize = 0;
-
-	//return success!
-	return 0;
+	//If the function have reached this point, then it was a successful read
+	return NSFLOAD_SUCCESS;
 }
 
 int nsf_load(struct nsf_data* nsf,FILE* file,bool loadData){
-	if(!file)
-		return -1;
-
 	char type[NSF_HEADERTYPE_LENGTH];
 	fread(&type,4,1,file);
 
@@ -310,60 +341,50 @@ int nsf_load(struct nsf_data* nsf,FILE* file,bool loadData){
 	else if(memcmp(type,NSF_HEADERTYPE_NSFE,NSF_HEADERTYPE_LENGTH)==0)
 		return nsf_loadNsfe(nsf,file,loadData);
 	else
-		return -1;
+		return NSFLOAD_WRONG_HEADER_TYPE;
 
-	// Snake's revenge puts '00' for the initial track, which (after subtracting 1) makes it 256 or -1 (bad!)
-	// This prevents that crap
-	if(nsf->initialTrack >= nsf->trackCount)
-		nsf->initialTrack = 0;
-	if(nsf->initialTrack < 0)
-		nsf->initialTrack = 0;
-
-	return 0;
+	return NSFLOAD_SUCCESS;
 }
 
 //////////////////////////////////////////////////////////////////////////
 //  File saving
 
 int nsf_saveNesm(const struct nsf_data* nsf,FILE* file){
-	if(file==NULL)
-		return -1;
-	
 	//Initialize header data and simply copying from the nsf
 	struct nsf_nesmHeader header = {
 		.type           = NSF_HEADERTYPE_NESM,
 		.typeExtra      = 0x1A,
 		.version        = 1,
-		.trackCount     = nsf->trackCount,
-		.initialTrack   = nsf->initialTrack + 1,
-		.loadAddress    = nsf->loadAddress,
-		.initAddress    = nsf->initAddress,
-		.playAddress    = nsf->playAddress,
-		.speedNTSC      = nsf->ntscPlaySpeed,
-		.speedPAL       = nsf->palPlaySpeed,
-		.region         = nsf->region,
-		.chipExtensions = nsf->chipExtensions
+		.trackCount     = nsf->info.trackCount,
+		.initialTrack   = nsf->info.initialTrack + 1,
+		.loadAddress    = htole16(nsf->info.loadAddress),
+		.initAddress    = htole16(nsf->info.initAddress),
+		.playAddress    = htole16(nsf->info.playAddress),
+		.speedNTSC      = htole16(nsf->ntscPlaySpeed),
+		.speedPAL       = htole16(nsf->palPlaySpeed),
+		.region         = nsf->info.region,
+		.chipExtensions = nsf->info.chipExtensions
 	};
 
 	//Copy strings and arrays of data
 	if(nsf->gameTitle){
-		memcpy(header.gameTitle,nsf->gameTitle,min(strlen(nsf->gameTitle),31));
+		memcpy(header.gameTitle,nsf->gameTitle,MIN(strlen(nsf->gameTitle),31));
 		header.gameTitle[31]='\0';
 	}else
-		memset(header.gameTitle,'\0',32);
+		memset(header.gameTitle,'\0',sizeof(header.gameTitle));
 
 	if(nsf->artist){
-		memcpy(header.artist,nsf->artist,min(strlen(nsf->artist),31));
+		memcpy(header.artist,nsf->artist,MIN(strlen(nsf->artist),31));
 		header.artist[31]='\0';
 	}else
-		memset(header.artist,'\0',32);
+		memset(header.artist,'\0',sizeof(header.artist));
 
 	if(nsf->copyright){
-		memcpy(header.copyright,nsf->copyright,min(strlen(nsf->copyright),31));
+		memcpy(header.copyright,nsf->copyright,MIN(strlen(nsf->copyright),31));
 		header.copyright[31]='\0';
 	}
 	else
-		memset(header.copyright,'\0',32);
+		memset(header.copyright,'\0',sizeof(header.copyright));
 
 	if(nsf->bankSwitch)
 		memcpy(header.bankSwitch,nsf->bankSwitch,8);
@@ -384,10 +405,7 @@ void nsfe_saveChunk(nsfe_chunkType type[NSFE_CHUNKTYPE_LENGTH],void* data,size_t
 
 }
 
-int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){
-	if(file==NULL)
-		return -1;
-
+int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){//TODO: MAgic numbers
 	int chunkSize;
 	struct nsfe_infoChunk info;
 
@@ -397,13 +415,13 @@ int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){
 
 	//Info chunk
 	chunkSize = sizeof(struct nsfe_infoChunk);
-	info.chipExtensions = nsf->chipExtensions;
-	info.initAddress    = nsf->initAddress;
-	info.region         = nsf->region;
-	info.loadAddress    = nsf->loadAddress;
-	info.playAddress    = nsf->playAddress;
-	info.initialTrack   = nsf->initialTrack;
-	info.trackCount     = nsf->trackCount;
+	info.chipExtensions = nsf->info.chipExtensions;
+	info.region         = nsf->info.region;
+	info.initAddress    = htole16(nsf->info.initAddress);
+	info.loadAddress    = htole16(nsf->info.loadAddress);
+	info.playAddress    = htole16(nsf->info.playAddress);
+	info.initialTrack   = nsf->info.initialTrack;
+	info.trackCount     = nsf->info.trackCount;
 
 	fwrite(&chunkSize,4,1,file);
 	fwrite(NSFE_CHUNKTYPE_INFO,4,1,file);
@@ -421,16 +439,16 @@ int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){
 	}
 
 	//Time chunk if needed
-	if(nsf->trackTimes){
-		chunkSize = 4 * nsf->trackCount;
+	if(nsf->trackTimes){//TODO: Endian
+		chunkSize = 4 * nsf->info.trackCount;
 		fwrite(&chunkSize,4,1,file);
 		fwrite(NSFE_CHUNKTYPE_TIME,4,1,file);
 		fwrite(nsf->trackTimes,chunkSize,1,file);
 	}
 
 	//Fade chunk if needed
-	if(nsf->trackFades){
-		chunkSize = 4 * nsf->trackCount;
+	if(nsf->trackFades){//TODO: Endian
+		chunkSize = 4 * nsf->info.trackCount;
 		fwrite(&chunkSize,4,1,file);
 		fwrite(NSFE_CHUNKTYPE_FADE,4,1,file);
 		fwrite(nsf->trackFades,chunkSize,1,file);
@@ -451,7 +469,7 @@ int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){
 		fwrite(NSFE_CHUNKTYPE_AUTH,4,1,file);
 
 		if(nsf->gameTitle)
-			fwrite(nsf->gameTitle,strlen(nsf->gameTitle) + 1,1,file);
+			fwrite(nsf->gameTitle,strlen(nsf->gameTitle) + 1,1,file);//TODO: Doesn't need to null-terminate an already null-terminated string?
 		else
 			putc('\0',file);
 
@@ -481,15 +499,15 @@ int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){
 
 	//tlbl chunk
 	if(nsf->trackLabels){
-		chunkSize = nsf->trackCount;
+		chunkSize = nsf->info.trackCount;
 
-		for(int i=0;i<nsf->trackCount;++i)
+		for(int i=0;i<nsf->info.trackCount;++i)
 			chunkSize += strlen(nsf->trackLabels[i]);
 
 		fwrite(&chunkSize,4,1,file);
 		fwrite(NSFE_CHUNKTYPE_TLBL,4,1,file);
 
-		for(int i=0;i<nsf->trackCount;++i){
+		for(int i=0;i<nsf->info.trackCount;++i){
 			if(nsf->trackLabels[i])
 				fwrite(nsf->trackLabels[i],strlen(nsf->trackLabels[i]) + 1,1,file);
 			else
