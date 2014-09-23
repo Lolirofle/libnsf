@@ -59,11 +59,11 @@ int nsf_loadNesm(struct nsf_data* nsf,FILE* file,bool loadData){
 
 	//Confirm the header type for NESM
 	if(memcmp(header.type,NSF_HEADERTYPE_NESM,NSF_HEADERTYPE_LENGTH)!=0)
-		return NSFLOAD_WRONG_HEADER_TYPE;
+		return -2;
 	if(header.typeExtra!=0x1A)
-		return NSFLOAD_WRONG_HEADER_TYPE2;
+		return -3;
 	if(header.version!=1)//TODO: Some badly formatted NSFs claims to be above version 1
-		return NSFLOAD_WRONG_HEADER_VERSION;
+		return -4;
 
 	//Copy data from nsf_nesmHeader to nsf_data
 	nsf->region         = header.region & 0x03;
@@ -81,11 +81,11 @@ int nsf_loadNesm(struct nsf_data* nsf,FILE* file,bool loadData){
 
 	//Allocate space for strings and +1 for null termination
 	if(!(nsf->gameTitle = malloc(sizeof(header.gameTitle) + sizeof(char)*1)))
-		return NSFLOAD_ALLOCATION_ERROR;
+		return 1;
 	if(!(nsf->artist    = malloc(sizeof(header.artist)    + sizeof(char)*1)))
-		return NSFLOAD_ALLOCATION_ERROR;
+		return 1;
 	if(!(nsf->copyright = malloc(sizeof(header.copyright) + sizeof(char)*1)))
-		return NSFLOAD_ALLOCATION_ERROR;
+		return 1;
 
 	//Copy strings and append a null terminator
 	memcpy(nsf->gameTitle,header.gameTitle,sizeof(header.gameTitle));
@@ -109,7 +109,7 @@ int nsf_loadNesm(struct nsf_data* nsf,FILE* file,bool loadData){
 	}
 
 	//If the function have reached this point, then it was a successful read
-	return NSFLOAD_SUCCESS;
+	return 0;
 }
 
 int nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData){
@@ -223,8 +223,8 @@ int nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData){
 			if(nsf->gameTitle)
 				return -13;
 
-			char* buffer;
-			char* ptr;
+			char*		buffer;
+			char*		ptr;
 			SAFE_NEW(buffer,char,chunkSize + 4,1);
 
 			fread(buffer,chunkSize,1,file);
@@ -296,6 +296,9 @@ int nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData){
 }
 
 int nsf_load(struct nsf_data* nsf,FILE* file,bool loadData){
+	if(!file)
+		return -1;
+
 	char type[NSF_HEADERTYPE_LENGTH];
 	fread(&type,4,1,file);
 
@@ -307,9 +310,8 @@ int nsf_load(struct nsf_data* nsf,FILE* file,bool loadData){
 	else if(memcmp(type,NSF_HEADERTYPE_NSFE,NSF_HEADERTYPE_LENGTH)==0)
 		return nsf_loadNsfe(nsf,file,loadData);
 	else
-		return NSFLOAD_WRONG_HEADER_TYPE;
+		return -1;
 
-	//TODO: Dead code, won't reach this point
 	// Snake's revenge puts '00' for the initial track, which (after subtracting 1) makes it 256 or -1 (bad!)
 	// This prevents that crap
 	if(nsf->initialTrack >= nsf->trackCount)
@@ -317,13 +319,16 @@ int nsf_load(struct nsf_data* nsf,FILE* file,bool loadData){
 	if(nsf->initialTrack < 0)
 		nsf->initialTrack = 0;
 
-	return NSFLOAD_SUCCESS;
+	return 0;
 }
 
 //////////////////////////////////////////////////////////////////////////
 //  File saving
 
 int nsf_saveNesm(const struct nsf_data* nsf,FILE* file){
+	if(file==NULL)
+		return -1;
+	
 	//Initialize header data and simply copying from the nsf
 	struct nsf_nesmHeader header = {
 		.type           = NSF_HEADERTYPE_NESM,
@@ -380,6 +385,9 @@ void nsfe_saveChunk(nsfe_chunkType type[NSFE_CHUNKTYPE_LENGTH],void* data,size_t
 }
 
 int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){
+	if(file==NULL)
+		return -1;
+
 	int chunkSize;
 	struct nsfe_infoChunk info;
 

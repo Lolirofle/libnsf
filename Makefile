@@ -1,14 +1,14 @@
+OUT=nsf
 CC=gcc
-DEPS=popt
-CFLAGS= -std=c99 -Wall -fms-extensions `pkg-config --cflags $(DEPS)`
-LDFLAGS= `pkg-config --libs $(DEPS)`
-OUT=nsfinfo
+DEPS=
+CFLAGS= -fPIC -std=c99 -Wall -fms-extensions `pkg-config --cflags $(DEPS)`
+LDFLAGS= -shared -Wl,-soname,lib$(OUT).so `pkg-config --libs $(DEPS)`
 
 vpath %.c .
 
 rwildcard=$(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2) $(filter $(subst *,%,$2),$d))
 
-SOURCES=$(call rwildcard,./src/,*.c) main.c
+SOURCES=$(call rwildcard,./src/,*.c)
 
 all: CFLAGS+= -O3
 all: $(OUT)
@@ -17,10 +17,7 @@ debug: CFLAGS+= -g -ftrapv -Wundef -Wpointer-arith -Wcast-align -Wwrite-strings 
 debug: $(OUT)
 
 clean:
-	rm -f $(OUT)
+	rm -f lib$(OUT).so
 
 $(OUT): $(SOURCES)
-	$(CC) -Isrc $(CFLAGS) -o $@ $(LDFLAGS) $^
-
-run:
-	./$(OUT)
+	$(CC) -I. $(CFLAGS) -o lib$@.so $(LDFLAGS) $^

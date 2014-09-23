@@ -71,9 +71,9 @@ struct __attribute__ ((__packed__)) nsf_nesmHeader{
 	uint16_t           loadAddress;
 	uint16_t           initAddress;
 	uint16_t           playAddress;
-	char               gameTitle[32];//Not neccesarily null-terminated
-	char               artist[32];   //Not neccesarily null-terminated
-	char               copyright[32];//Not neccesarily null-terminated
+	char               gameTitle[32];
+	char               artist[32];
+	char               copyright[32];
 	uint16_t           speedNTSC;
 	uint8_t            bankSwitch[8];
 	uint16_t           speedPAL;
@@ -98,11 +98,11 @@ struct nsf_data{
 	//basic NSF info
 	struct nsfe_infoChunk;
 	
-	//Old NESM speed stuff
+	//Old NESM speed stuff (blarg)
 	int ntscPlaySpeed;
 	int palPlaySpeed;
 
-	//Song/note data
+	//nsf data
 	uint8_t* dataBuffer;    //the buffer containing NSF code.  If loadData was false when loading the NSF, this is NULL
 	int      dataBufferSize;//the size of the above buffer.  0 if loadData was false
 
@@ -110,59 +110,40 @@ struct nsf_data{
 	uint8_t* playlist;    //the buffer containing the playlist (NULL if none exists).  Each entry is the zero based index of the song to play
 	int      playlistSize;//the size of the above buffer (and the number of tracks in the playlist)
 
-	//Track informations (Fixed size lists)
-	//NULL if no track times specified, otherwise these MUST BE (trackCount*sizeof(*<variable>)) in size.
-	int*   trackTimes; //Contains track times.
-	int*   trackFades; //Contains track fade times.
-	char** trackLabels;//Contains track label strings that are null terminated.
+	//Track informations
+	int*   trackTimes;//the buffer containing the track times.  NULL if no track times specified. Otherwise this buffer MUST BE (nTrackCount * sizeof(int)) in size
+	int*   trackFades;//the buffer containing the track fade times.  NULL if none are specified.  Same conditions as trackTimes
+	char** trackLabels;//the buffer containing track labels.  NULL if there are no labels.  There must be nTrackCount char pointers (or none if NULL).
+	                   //Each pointer must point to it's own buffer containing a string (the length of this buffer doesn't matter, just so long as the string is NULL terminated)
+	                   // the string's buffer may be NULL if a string isn't needed
+	                   //szTrackLabels as well as all of the buffers it points to are destroyed upon
+	                   // a call to Destroy (or the destructor).
 
-	//File information (null terminated strings or NULL if not specified)
-	char* gameTitle;//Name of the game.
-	char* artist;   //Artist of the music.
-	char* copyright;//Copyright information.
-	char* ripper;   //Name of the one who ripped the NSF.
+	//File information (NULL-terminated strings or NULL if not specified)
+	char* gameTitle;//Name of the game
+	char* artist;   //Artist of the music
+	char* copyright;//Copyright information
+	char* ripper;   //Name of the one who ripped the NSF
 
 	//Bankswitching info
 	uint8_t bankSwitch[8];//The initial bankswitching registers needed for some NSFs.  If the NSF does not use bankswitching, these values will all be zero
 };
 
-enum nsf_load_return{
-	NSFLOAD_SUCCESS              =  0,
-	NSFLOAD_ALLOCATION_ERROR     = -1,
-	NSFLOAD_WRONG_HEADER_TYPE    = -2,
-	NSFLOAD_WRONG_HEADER_TYPE2   = -3,
-	NSFLOAD_WRONG_HEADER_VERSION = -3,
-};
-
-
 /**
- * Load a file to the nsf_data structure.
+ * Loads a nsf structure from a specified path.
  * If loadData is false, the NSF code is not loaded, only the other information (like track times, game title, Author, etc).
  * If you're loading an NSF with intention to play it, loadData must be true.
- *
- * @param nsf      Output, structure to write to.
- *                 Must be non-null.
- * @param file     Input, file to read from
- *                 Must be non-null.
- * @param loadData Whether to load the song data
  */
 int nsf_load(struct nsf_data* nsf,FILE* file,bool loadData);
-int nsf_loadNesm(struct nsf_data* nsf,FILE* file,bool loadData);
-int nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData);
 
 /**
- * Save the nsf_data to a file.
- *
- * @param nsf      Input, structure to read from.
- *                 Must be non-null.
- * @param file     Output, file to write to.
- *                 Must be non-null.
+ * Saves the NSF to a file
  */
 int nsf_saveNesm(const struct nsf_data* nsf,FILE* file);
 int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file);
 
 /**
- * Cleans up memory that the load functions allocated
+ * Cleans up memory
  */
 void nsf_free(const struct nsf_data* nsf);
 
