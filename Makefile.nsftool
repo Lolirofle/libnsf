@@ -1,14 +1,10 @@
 CC=gcc
 DEPS=popt
 CFLAGS= -std=gnu99 -Wall `pkg-config --cflags $(DEPS)`
-LDFLAGS= `pkg-config --libs $(DEPS)`
+LDFLAGS= `pkg-config --libs $(DEPS)` -lnsf
 OUT=nsfinfo
 
-vpath %.c .
-
-rwildcard=$(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2) $(filter $(subst *,%,$2),$d))
-
-SOURCES=$(call rwildcard,./src/,*.c) main.c
+SOURCES= main.c
 
 all: CFLAGS+= -O3
 all: $(OUT)

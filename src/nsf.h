@@ -146,7 +146,7 @@ enum nsf_load_return{
  * Return codes for the nsf_save functions.
  */
 enum nsf_save_return{
-	NSFSAVE_SAVE                    =  0,
+	NSFSAVE_SUCCESS                =  0,
 	NSFSAVE_ALLOCATION_ERROR        = -1,
 };
 
