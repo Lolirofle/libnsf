@@ -146,6 +146,14 @@ enum nsf_load_return{
 };
 
 /**
+ * Return codes for the nsf_save functions.
+ */
+enum nsf_save_return{
+	NSFSAVE_SAVE                    =  0,
+	NSFSAVE_ALLOCATION_ERROR        = -1,
+};
+
+/**
  * Load a file to the nsf_data structure.
  * If loadData is false, the NSF code is not loaded, only the other information (like track times, game title, Author, etc).
  * If you're loading an NSF with intention to play it, loadData must be true.
@@ -170,8 +178,8 @@ enum nsf_load_return nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData)
  * @param file     Output, file to write to.
  *                 Must be non-null and a valid FILE.
  */
-int nsf_saveNesm(const struct nsf_data* nsf,FILE* file);
-int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file);
+enum nsf_save_return nsf_saveNesm(const struct nsf_data* nsf,FILE* file);
+enum nsf_save_return nsf_saveNsfe(const struct nsf_data* nsf,FILE* file);
 
 /**
  * Cleans up memory that the load functions allocated.

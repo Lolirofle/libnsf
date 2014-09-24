@@ -52,7 +52,7 @@ void nsf_free(const struct nsf_data* nsf){
 	free(nsf->ripper);
 }
 
-int nsf_loadNesm(struct nsf_data* nsf,FILE* file,bool loadData){
+enum nsf_load_return nsf_loadNesm(struct nsf_data* nsf,FILE* file,bool loadData){
 	//Set to zeroes in case of error (when it is neccessary to free)
 	nsf->dataBuffer  =
 	nsf->playlist    = NULL;
@@ -126,7 +126,7 @@ int nsf_loadNesm(struct nsf_data* nsf,FILE* file,bool loadData){
 	return NSFLOAD_SUCCESS;
 }
 
-int nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData){
+enum nsf_load_return nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData){
 	//Data for chunk iterations
 	nsfe_chunkType chunkType[NSFE_CHUNKTYPE_LENGTH];
 	uint32_t chunkSize;
@@ -274,7 +274,7 @@ int nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData){
 			for(int i=0;i<4;++i){
 				chunkUsed = strlen(ptr) + 1;
 				*ar[i] = malloc(chunkUsed);
-				if(!*ar[i]) { free(buffer); return 0; }//TODO: What? Why return here?
+				if(!*ar[i]) { free(buffer); return NSFSAVE_ALLOCATION_ERROR; }
 				memcpy(*ar[i],ptr,chunkUsed);
 				ptr += chunkUsed;
 			}
@@ -329,7 +329,7 @@ int nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData){
 	return NSFLOAD_SUCCESS;
 }
 
-int nsf_load(struct nsf_data* nsf,FILE* file,bool loadData){
+enum nsf_load_return nsf_load(struct nsf_data* nsf,FILE* file,bool loadData){
 	char type[NSF_HEADERTYPE_LENGTH];
 	fread(&type,4,1,file);
 
@@ -349,7 +349,7 @@ int nsf_load(struct nsf_data* nsf,FILE* file,bool loadData){
 //////////////////////////////////////////////////////////////////////////
 //  File saving
 
-int nsf_saveNesm(const struct nsf_data* nsf,FILE* file){
+enum nsf_save_return nsf_saveNesm(const struct nsf_data* nsf,FILE* file){
 	//Initialize header data and simply copying from the nsf
 	struct nsf_nesmHeader header = {
 		.type           = NSF_HEADERTYPE_NESM,
@@ -367,51 +367,42 @@ int nsf_saveNesm(const struct nsf_data* nsf,FILE* file){
 	};
 
 	//Copy strings and arrays of data
-	if(nsf->gameTitle){
-		memcpy(header.gameTitle,nsf->gameTitle,MIN(strlen(nsf->gameTitle),31));
-		header.gameTitle[31]='\0';
-	}else
+	if(nsf->gameTitle)
+		memcpy(header.gameTitle,nsf->gameTitle,MIN(strlen(nsf->gameTitle),sizeof(header.gameTitle)));
+	else
 		memset(header.gameTitle,'\0',sizeof(header.gameTitle));
 
-	if(nsf->artist){
-		memcpy(header.artist,nsf->artist,MIN(strlen(nsf->artist),31));
-		header.artist[31]='\0';
-	}else
+	if(nsf->artist)
+		memcpy(header.artist,nsf->artist,MIN(strlen(nsf->artist),sizeof(header.artist)));
+	else
 		memset(header.artist,'\0',sizeof(header.artist));
 
-	if(nsf->copyright){
-		memcpy(header.copyright,nsf->copyright,MIN(strlen(nsf->copyright),31));
-		header.copyright[31]='\0';
-	}
+	if(nsf->copyright)
+		memcpy(header.copyright,nsf->copyright,MIN(strlen(nsf->copyright),sizeof(header.copyright)));
 	else
 		memset(header.copyright,'\0',sizeof(header.copyright));
 
 	if(nsf->bankSwitch)
-		memcpy(header.bankSwitch,nsf->bankSwitch,8);
+		memcpy(header.bankSwitch,nsf->bankSwitch,sizeof(header.bankSwitch));
 	else
-		memset(header.bankSwitch,'\0',8);
+		memset(header.bankSwitch,'\0',sizeof(header.bankSwitch));
 
-	//Copy the header to the file
+	//Copy header to file
 	fwrite(&header,sizeof(struct nsf_nesmHeader),1,file);
 
-	//Copy the data
+	//Write data
 	if(nsf->dataBufferSize>0 && nsf->dataBuffer)
 		fwrite(nsf->dataBuffer,nsf->dataBufferSize,1,file);
 
 	return 0;
 }
 
-void nsfe_saveChunk(nsfe_chunkType type[NSFE_CHUNKTYPE_LENGTH],void* data,size_t size){
-
-}
-
-int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){//TODO: MAgic numbers
-	int chunkSize;
+enum nsf_save_return nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){//TODO: MAgic numbers
+	uint32_t chunkSize;
 	struct nsfe_infoChunk info;
 
 	//Header type
-	fwrite(NSF_HEADERTYPE_NSFE,4,1,file);
-
+	fwrite(NSF_HEADERTYPE_NSFE,NSF_HEADERTYPE_LENGTH,1,file);
 
 	//Info chunk
 	chunkSize = sizeof(struct nsfe_infoChunk);
@@ -423,16 +414,16 @@ int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){//TODO: MAgic numbers
 	info.initialTrack   = nsf->info.initialTrack;
 	info.trackCount     = nsf->info.trackCount;
 
-	fwrite(&chunkSize,4,1,file);
-	fwrite(NSFE_CHUNKTYPE_INFO,4,1,file);
+	fwrite(&chunkSize,sizeof(chunkSize),1,file);
+	fwrite(NSFE_CHUNKTYPE_INFO,NSFE_CHUNKTYPE_LENGTH,1,file);
 	fwrite(&info,chunkSize,1,file);
 
 	//Bankswitching chunk if needed
 	for(chunkSize=0;chunkSize<8;++chunkSize){
 		if(nsf->bankSwitch[chunkSize]){
 			chunkSize = 8;
-			fwrite(&chunkSize,4,1,file);
-			fwrite(NSFE_CHUNKTYPE_BANK,4,1,file);
+			fwrite(&chunkSize,sizeof(chunkSize),1,file);
+			fwrite(NSFE_CHUNKTYPE_BANK,NSFE_CHUNKTYPE_LENGTH,1,file);
 			fwrite(nsf->bankSwitch,chunkSize,1,file);
 			break;
 		}
@@ -440,17 +431,17 @@ int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){//TODO: MAgic numbers
 
 	//Time chunk if needed
 	if(nsf->trackTimes){//TODO: Endian
-		chunkSize = 4 * nsf->info.trackCount;
-		fwrite(&chunkSize,4,1,file);
-		fwrite(NSFE_CHUNKTYPE_TIME,4,1,file);
+		chunkSize = sizeof(*nsf->trackTimes)*nsf->info.trackCount;
+		fwrite(&chunkSize,sizeof(chunkSize),1,file);
+		fwrite(NSFE_CHUNKTYPE_TIME,NSFE_CHUNKTYPE_LENGTH,1,file);
 		fwrite(nsf->trackTimes,chunkSize,1,file);
 	}
 
 	//Fade chunk if needed
 	if(nsf->trackFades){//TODO: Endian
-		chunkSize = 4 * nsf->info.trackCount;
-		fwrite(&chunkSize,4,1,file);
-		fwrite(NSFE_CHUNKTYPE_FADE,4,1,file);
+		chunkSize = sizeof(*nsf->trackFades)*nsf->info.trackCount;
+		fwrite(&chunkSize,sizeof(chunkSize),1,file);
+		fwrite(NSFE_CHUNKTYPE_FADE,NSFE_CHUNKTYPE_LENGTH,1,file);
 		fwrite(nsf->trackFades,chunkSize,1,file);
 	}
 
@@ -465,11 +456,11 @@ int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){//TODO: MAgic numbers
 			chunkSize += strlen(nsf->copyright);
 		if(nsf->ripper)
 			chunkSize += strlen(nsf->ripper);
-		fwrite(&chunkSize,4,1,file);
-		fwrite(NSFE_CHUNKTYPE_AUTH,4,1,file);
+		fwrite(&chunkSize,sizeof(chunkSize),1,file);
+		fwrite(NSFE_CHUNKTYPE_AUTH,NSFE_CHUNKTYPE_LENGTH,1,file);
 
 		if(nsf->gameTitle)
-			fwrite(nsf->gameTitle,strlen(nsf->gameTitle) + 1,1,file);//TODO: Doesn't need to null-terminate an already null-terminated string?
+			fwrite(nsf->gameTitle,strlen(nsf->gameTitle) + 1,1,file);
 		else
 			putc('\0',file);
 
@@ -491,9 +482,9 @@ int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){//TODO: MAgic numbers
 
 	//plst chunk
 	if(nsf->playlist){
-		chunkSize = nsf->playlistSize;
-		fwrite(&chunkSize,4,1,file);
-		fwrite(NSFE_CHUNKTYPE_PLST,4,1,file);
+		chunkSize = nsf->playlistSize*sizeof(*nsf->playlist);
+		fwrite(&chunkSize,sizeof(chunkSize),1,file);
+		fwrite(NSFE_CHUNKTYPE_PLST,NSFE_CHUNKTYPE_LENGTH,1,file);
 		fwrite(nsf->playlist,chunkSize,1,file);
 	}
 
@@ -504,8 +495,8 @@ int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){//TODO: MAgic numbers
 		for(int i=0;i<nsf->info.trackCount;++i)
 			chunkSize += strlen(nsf->trackLabels[i]);
 
-		fwrite(&chunkSize,4,1,file);
-		fwrite(NSFE_CHUNKTYPE_TLBL,4,1,file);
+		fwrite(&chunkSize,sizeof(chunkSize),1,file);
+		fwrite(NSFE_CHUNKTYPE_TLBL,NSFE_CHUNKTYPE_LENGTH,1,file);
 
 		for(int i=0;i<nsf->info.trackCount;++i){
 			if(nsf->trackLabels[i])
@@ -517,14 +508,14 @@ int nsf_saveNsfe(const struct nsf_data* nsf,FILE* file){//TODO: MAgic numbers
 
 	//Data
 	chunkSize = nsf->dataBufferSize;
-	fwrite(&chunkSize,4,1,file);
-	fwrite(NSFE_CHUNKTYPE_DATA,4,1,file);
+	fwrite(&chunkSize,sizeof(chunkSize),1,file);
+	fwrite(NSFE_CHUNKTYPE_DATA,NSFE_CHUNKTYPE_LENGTH,1,file);
 	fwrite(nsf->dataBuffer,chunkSize,1,file);
 
 	//end chunk
 	chunkSize = 0;
-	fwrite(&chunkSize,4,1,file);
-	fwrite(NSFE_CHUNKTYPE_NEND,4,1,file);
+	fwrite(&chunkSize,sizeof(chunkSize),1,file);
+	fwrite(NSFE_CHUNKTYPE_NEND,NSFE_CHUNKTYPE_LENGTH,1,file);
 
 	//w00t
 	return 0;
