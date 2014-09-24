@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2004      Disch
  *
  * This program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * -------------------------------------------------------------------------
  * Code are based of the Winamp plugin "NotSoFatso v851".
@@ -32,6 +32,11 @@
 #endif
 
 #define SAFE_NEW(ptr,type,n,failureReturn) if(!(ptr=malloc(sizeof(type)*n)))return failureReturn;memset(ptr,'\0',sizeof(type)*n)
+
+void nsf_init(struct nsf_data* nsf){
+	//Set to zeroes in case of error (when it is neccessary to free)
+	memset(nsf,0,sizeof(struct nsf_data));
+}
 
 void nsf_free(const struct nsf_data* nsf){
 	if(nsf==NULL)
@@ -53,17 +58,6 @@ void nsf_free(const struct nsf_data* nsf){
 }
 
 enum nsf_load_return nsf_loadNesm(struct nsf_data* nsf,FILE* file,bool loadData){
-	//Set to zeroes in case of error (when it is neccessary to free)
-	nsf->dataBuffer  =
-	nsf->playlist    = NULL;
-	nsf->trackTimes  =
-	nsf->trackFades  = NULL;
-	nsf->trackLabels = NULL;
-	nsf->gameTitle   =
-	nsf->artist      =
-	nsf->copyright   =
-	nsf->ripper      = NULL;
-
 	//Read the header (Copy the whole header to the structure)
 	struct nsf_nesmHeader header;
 	fread(&header,sizeof(struct nsf_nesmHeader),1,file);
@@ -99,10 +93,10 @@ enum nsf_load_return nsf_loadNesm(struct nsf_data* nsf,FILE* file,bool loadData)
 	//Copy strings and append a null terminator in case the string is filling the field
 	memcpy(nsf->gameTitle,header.gameTitle,sizeof(header.gameTitle));
 	nsf->gameTitle[sizeof(header.gameTitle)] = '\0';
-	
+
 	memcpy(nsf->artist   ,header.artist   ,sizeof(header.artist));
 	nsf->artist   [sizeof(header.artist)]    = '\0';
-	
+
 	memcpy(nsf->copyright,header.copyright,sizeof(header.copyright));
 	nsf->copyright[sizeof(header.copyright)] = '\0';
 
@@ -164,9 +158,8 @@ enum nsf_load_return nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData)
 				return NSFLOAD_TOO_SMALL_CHUNK;
 
 			infoFound = true;
-			
-			//Default value
-			memset(&nsf->info,'\0',sizeof(struct nsfe_infoChunk));
+
+			//Default values
 			nsf->info.trackCount = 1;
 
 			chunkUsed = MIN((uint32_t)sizeof(struct nsfe_infoChunk),chunkSize);
@@ -176,7 +169,7 @@ enum nsf_load_return nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData)
 			nsf->info.loadAddress = le16toh(nsf->info.loadAddress);
 			nsf->info.initAddress = le16toh(nsf->info.initAddress);
 			nsf->info.playAddress = le16toh(nsf->info.playAddress);
-			
+
 			fseek(file,chunkSize-chunkUsed,SEEK_CUR);
 
 			nsf->palPlaySpeed  = (uint16_t)(1000000/PAL_NMIRATE); //blarg
@@ -197,7 +190,8 @@ enum nsf_load_return nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData)
 			//Load the data if necessary
 			if(loadData){
 				nsf->dataBufferSize = chunkSize;
-				SAFE_NEW(nsf->dataBuffer,uint8_t,nsf->dataBufferSize,1);
+				if(!(nsf->dataBuffer = malloc(sizeof(uint8_t)*nsf->dataBufferSize)))
+					return NSFLOAD_ALLOCATION_ERROR;
 				fread(nsf->dataBuffer,nsf->dataBufferSize,1,file);
 			}else{
 				nsf->dataBufferSize = 0;
@@ -213,7 +207,8 @@ enum nsf_load_return nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData)
 			if(nsf->trackTimes)
 				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
 
-			SAFE_NEW(nsf->trackTimes,int,nsf->info.trackCount,1);
+			if(!(nsf->trackTimes = calloc(nsf->info.trackCount,sizeof(nsf->trackTimes[0]))))
+				return NSFLOAD_ALLOCATION_ERROR;
 			chunkUsed = MIN(chunkSize/4,nsf->info.trackCount);
 
 			fread(nsf->trackTimes,chunkUsed,4,file);
@@ -229,7 +224,8 @@ enum nsf_load_return nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData)
 			if(nsf->trackFades)
 				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
 
-			SAFE_NEW(nsf->trackFades,int,nsf->info.trackCount,1);
+			if(!(nsf->trackFades = calloc(nsf->info.trackCount,sizeof(nsf->trackFades[0]))))
+				return NSFLOAD_ALLOCATION_ERROR;
 			chunkUsed = MIN(chunkSize / 4,nsf->info.trackCount);
 
 			fread(nsf->trackFades,chunkUsed,4,file);
@@ -253,11 +249,13 @@ enum nsf_load_return nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData)
 				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
 
 			nsf->playlistSize = chunkSize;
-			if(nsf->playlistSize < 1)
-				break;  //no playlist?
 
-			SAFE_NEW(nsf->playlist,uint8_t,nsf->playlistSize,1);
-			fread(nsf->playlist,chunkSize,1,file);
+			//If playlist data exists
+			if(nsf->playlistSize>0){
+				if(!(nsf->playlist = calloc(nsf->playlistSize,sizeof(nsf->playlist[0]))))
+					return NSFLOAD_ALLOCATION_ERROR;
+				fread(nsf->playlist,chunkSize,1,file);
+			}
 		}else if(memcmp(chunkType,NSFE_CHUNKTYPE_AUTH,NSFE_CHUNKTYPE_LENGTH)==0){
 			//Restrict to one of this type of chunk
 			if(nsf->gameTitle)
@@ -287,7 +285,8 @@ enum nsf_load_return nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData)
 			if(nsf->trackLabels)
 				return NSFLOAD_MULTIPLE_SINGLE_CHUNKS;
 
-			SAFE_NEW(nsf->trackLabels,char*,nsf->info.trackCount,1);
+			if(!(nsf->trackLabels = calloc(nsf->info.trackCount,sizeof(nsf->trackLabels[0]))))
+				return NSFLOAD_ALLOCATION_ERROR;
 
 			char* buffer;
 			char* ptr;

@@ -6,12 +6,12 @@
 #include <popt.h>//TODO: Rewrite to argp because it appears to be GNU standard and more widespread
 
 void nsf_printChipExtensions(const nsf_chipExtensions* ext,FILE* output){
-	if(ext->VRCVI)       fputs("VRCVI, ",output);
-	if(ext->VRCVII)      fputs("VRCVII, ",output);
-	if(ext->FDS)         fputs("FDS sound, ",output);
-	if(ext->MMC5)        fputs("MMC5 audio, ",output);
-	if(ext->NAMCO106)    fputs("Namco 106, ",output);
-	if(ext->SUNSOFT_FME07)fputs("Sunsoft FME-07, ",output);
+	if(*ext&NSF_CHIP_VRCVI)       fputs("VRCVI, ",output);
+	if(*ext&NSF_CHIP_VRCVII)      fputs("VRCVII, ",output);
+	if(*ext&NSF_CHIP_FDS)         fputs("FDS sound, ",output);
+	if(*ext&NSF_CHIP_MMC5)        fputs("MMC5 audio, ",output);
+	if(*ext&NSF_CHIP_NAMCO106)    fputs("Namco 106, ",output);
+	if(*ext&NSF_CHIP_SUNSOFT_FME07)fputs("Sunsoft FME-07, ",output);
 }
 
 struct nsf_data nsf;

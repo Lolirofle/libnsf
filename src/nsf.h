@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2004      Disch
  *
  * This program is free software; you can redistribute it and/or modify
@@ -45,17 +45,14 @@ typedef char nsfe_chunkType;
 
 /**
  * The chip extensions field in the NESM header
- * This structure must have the size 1 byte (sizeof(nsf_chipExtensions)=1) with no padding anywhere.
- * Unfortunately there's no static assert at the moment in C for controlling this.
  */
-typedef struct __attribute__ ((__packed__)) nsf_chipExtensions{//TODO: Bitfields are not suitable for use in a file format structure that is clearly defined
-	uint8_t VRCVI         :1;
-	uint8_t VRCVII        :1;
-	uint8_t FDS           :1;
-	uint8_t MMC5          :1;
-	uint8_t NAMCO106      :1;
-	uint8_t SUNSOFT_FME07 :1;
-}nsf_chipExtensions;
+typedef uint8_t nsf_chipExtensions;
+#define NSF_CHIP_VRCVI         1
+#define NSF_CHIP_VRCVII        2
+#define NSF_CHIP_FDS           4
+#define NSF_CHIP_MMC5          8
+#define NSF_CHIP_NAMCO106      16
+#define NSF_CHIP_SUNSOFT_FME07 32
 
 /**
  * The header for the NESM format
@@ -98,7 +95,7 @@ struct __attribute__ ((__packed__)) nsfe_infoChunk{
 struct nsf_data{
 	//basic NSF info
 	struct nsfe_infoChunk info;
-	
+
 	//Old NESM speed stuff
 	int ntscPlaySpeed;
 	int palPlaySpeed;
@@ -180,6 +177,14 @@ enum nsf_load_return nsf_loadNsfe(struct nsf_data* nsf,FILE* file,bool loadData)
  */
 enum nsf_save_return nsf_saveNesm(const struct nsf_data* nsf,FILE* file);
 enum nsf_save_return nsf_saveNsfe(const struct nsf_data* nsf,FILE* file);
+
+/**
+ * Initiates the nsf_data structure.
+ * This should be called before loading.
+ *
+ * @param nsf The nsf_data structure to initialize.
+ */
+void nsf_init(struct nsf_data* nsf);
 
 /**
  * Cleans up memory that the load functions allocated.
