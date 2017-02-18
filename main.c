@@ -31,8 +31,10 @@ struct{
               * artist,
               * copyright,
               * ripper,
-              * trackTitles;
-}write={NULL,NULL,NULL,NULL,NULL};
+              * trackTitles,
+              * trackLengths,
+              * trackFades;
+}write={NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
 
 struct{
 	uint8_t title        :1;
@@ -41,10 +43,12 @@ struct{
 	uint8_t copyright    :1;
 	uint8_t ripper       :1;
 	uint8_t trackTitles  :1;
+	uint8_t trackLengths :1;
+	uint8_t trackFades   :1;
 	uint8_t trackcount   :1;
 	uint8_t initialtrack :1;
 	uint8_t extensions   :1;
-}show={false,false,false,false,false,false,false,false};
+}show={false,false,false,false,false,false,false,false,false,false,false};
 
 poptContext parameterContext;
 
@@ -56,6 +60,8 @@ enum Show{
 	SHOW_COPYRIGHT,
 	SHOW_RIPPER,
 	SHOW_TRACKTITLES,
+	SHOW_TRACKLENGTHS,
+	SHOW_TRACKFADES,
 	SHOW_TRACKCOUNT,
 	SHOW_INITIALTRACK,
 	SHOW_EXTENSIONS,
@@ -221,6 +227,68 @@ bool trackTitleClosure(int i,const char* title,void* dat){
 	}
 }
 
+struct TrackLengthClosureData{
+	int32_t* lengths;
+	uint8_t tracks;
+};
+bool trackLengthClosure(int i,const char* length,void* dat){
+	struct TrackLengthClosureData* data = dat;
+
+	if(0<=i && i<data->tracks){
+		//Write
+		if(length!=NULL){
+			unsigned int min,sec;
+
+			//Parsing
+			char* tmp = length;
+			while(*tmp>='0' && *tmp<='9'){++tmp;}
+			if(*tmp=='.'){
+				*tmp = '\0';
+				min = atoi(length);
+				sec = atoi(tmp+1);
+				*tmp = '.';
+			}else{
+				return false;
+			}
+
+			//Writing
+			data->lengths[i] = min*60*1000 + sec*1000;
+		}
+		//Show
+		printf("%u ms (%u:%02u)\n",
+			data->lengths[i],
+			data->lengths[i]/1000/60,
+			data->lengths[i]/1000%60
+		);
+
+		return true;
+	}else{
+		return false;
+	}
+}
+
+struct TrackFadeClosureData{
+	int32_t* fades;
+	uint8_t tracks;
+};
+bool trackFadeClosure(int i,const char* fade,void* dat){
+	struct TrackFadeClosureData* data = dat;
+
+	if(0<=i && i<data->tracks){
+		//Write
+		if(fade!=NULL){
+			data->fades[i] = atoi(fade);
+		}
+
+		//Show
+		printf("%u ms\n",data->fades[i]);
+
+		return true;
+	}else{
+		return false;
+	}
+}
+
 int main(int argc,const char* argv[]){
 	//Initialize variables
 	memset(&nsf,'\0',sizeof(struct nsf_data));
@@ -280,6 +348,24 @@ int main(int argc,const char* argv[]){
 			SHOW_TRACKTITLES,
 			"Titles of tracks.",
 			"<int>[:<string>][,..]"
+		},
+		{
+			"tracklengths",
+			'L',
+			POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,
+			&write.trackLengths,
+			SHOW_TRACKLENGTHS,
+			"Length of tracks.",
+			"<int>[:<minutes>.<seconds>][,..]"
+		},
+		{
+			"trackfades",
+			'F',
+			POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,
+			&write.trackFades,
+			SHOW_TRACKFADES,
+			"Fade length of tracks.",
+			"<int>[:<milliseconds>][,..]"
 		},
 		{
 			"out",
@@ -361,7 +447,14 @@ int main(int argc,const char* argv[]){
 				goto OptionLoop;
 			case SHOW_RIPPER:
 				show.ripper=true;
+				goto OptionLoop;
 			case SHOW_TRACKTITLES:
+				show.trackTitles=true;
+				goto OptionLoop;
+			case SHOW_TRACKLENGTHS:
+				show.trackTitles=true;
+				goto OptionLoop;
+			case SHOW_TRACKFADES:
 				show.trackTitles=true;
 				goto OptionLoop;
 			case SHOW_TRACKCOUNT:
@@ -411,7 +504,7 @@ int main(int argc,const char* argv[]){
 
 			puts("Tracks:");
 			for(int i=0;i<nsf.info.trackCount;++i){
-				printf(" %03u:\n  Title:  %s\n  Length: %i ms (%u:%02u min)\n  Fade:   %i ms\n",
+				printf(" %03u:\n  Title:  %s\n  Length: %i ms (%u:%02u)\n  Fade:   %i ms\n",
 					i,
 					nsf.trackLabels?nsf.trackLabels[i]:"",
 					nsf.trackTimes?nsf.trackTimes[i]:-1,
@@ -457,8 +550,28 @@ int main(int argc,const char* argv[]){
 			}
 
 			if(write.trackTitles){
-				struct TrackTitleClosureData data = {nsf.trackLabels,nsf.info.trackCount};//TODO: Is it possible that nsf.trackLabels=NULL?
+				if(nsf.trackLabels==NULL){
+					if((nsf.trackLabels = calloc(nsf.info.trackCount,sizeof(nsf.trackLabels[0])))==NULL) return 1;
+				}
+				struct TrackTitleClosureData data = {nsf.trackLabels,nsf.info.trackCount};
 				parseOptionalIntStrMap(write.trackTitles,trackTitleClosure,&data);
+			}
+
+			if(write.trackLengths){
+				if(nsf.trackTimes==NULL){
+					if((nsf.trackTimes = calloc(nsf.info.trackCount,sizeof(nsf.trackTimes[0])))==NULL) return 1;
+				}
+				struct TrackLengthClosureData data = {nsf.trackTimes,nsf.info.trackCount};
+				parseOptionalIntStrMap(write.trackLengths,trackLengthClosure,&data);
+			}
+
+
+			if(write.trackFades){
+				if(nsf.trackFades==NULL){
+					if((nsf.trackFades = calloc(nsf.info.trackCount,sizeof(nsf.trackFades[0])))==NULL) return 1;
+				}
+				struct TrackFadeClosureData data = {nsf.trackFades,nsf.info.trackCount};
+				parseOptionalIntStrMap(write.trackFades,trackFadeClosure,&data);
 			}
 
 			//Show
