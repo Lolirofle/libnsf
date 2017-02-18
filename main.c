@@ -30,7 +30,8 @@ struct{
               * region,
               * artist,
               * copyright,
-              * ripper;
+              * ripper,
+              * trackTitles;
 }write={NULL,NULL,NULL,NULL,NULL};
 
 struct{
@@ -39,6 +40,7 @@ struct{
 	uint8_t artist       :1;
 	uint8_t copyright    :1;
 	uint8_t ripper       :1;
+	uint8_t trackTitles  :1;
 	uint8_t trackcount   :1;
 	uint8_t initialtrack :1;
 	uint8_t extensions   :1;
@@ -53,11 +55,146 @@ enum Show{
 	SHOW_ARTIST,
 	SHOW_COPYRIGHT,
 	SHOW_RIPPER,
+	SHOW_TRACKTITLES,
 	SHOW_TRACKCOUNT,
 	SHOW_INITIALTRACK,
 	SHOW_EXTENSIONS,
 	SHOW_OUTPUT
 };
+
+/**
+ * Parses a string in a certain format, executing a function for each key-value pair.
+ * Example of the format: 0:Zero,2,3:Three,4,5,7,8:Eight,100:"One hundred"
+ *
+ * @param str         Input, to parse from.
+ *                    Must be non-null and a null-terminated string.
+ * @param parsePair   Parsing function to execute.
+ *                    Must be non-null.
+ * @param closureData Passed to every execution of parsePair.
+ */
+bool parseOptionalIntStrMap(char* str,bool(*parsePair)(int,const char*,void*),void* closureData){
+	char* tmp      = str;
+	char* intBegin = NULL;
+	char* intEnd   = NULL;
+	char* strBegin = NULL;
+
+	#define SKIP_SPACES() while(*tmp==' '){++tmp;}
+
+	ParseKeyValue:
+		SKIP_SPACES();
+		if(*tmp=='\0') return true;
+
+		//Parse int
+		if(*tmp>='0' && *tmp<='9'){
+			intBegin = tmp;
+
+			while(*tmp>='0' && *tmp<='9'){
+				++tmp;
+			}
+
+			intEnd = tmp;
+		}else{
+			return false;
+		}
+
+		SKIP_SPACES();
+
+		//Parse separator
+		switch(*tmp){
+			//Key-value separator
+			case ',':
+				{
+					char c = *intEnd;
+					*intEnd = '\0';
+					parsePair(atoi(intBegin),NULL,closureData);
+					*intEnd = c;
+				}
+
+				++tmp;
+
+				//Reset states, and begin parsing a new key-value
+				intBegin = NULL;
+				intEnd   = NULL;
+				goto ParseKeyValue;
+
+			//End of string
+			case '\0':
+				parsePair(atoi(intBegin),NULL,closureData);
+				return true;
+
+			//Continue to parsing the value
+			case ':':
+				++tmp;
+				break;
+
+			//Expected separator or end-of-string
+			default:
+				return false;
+		}
+
+		SKIP_SPACES();
+
+		//Parse str
+		strBegin = tmp;
+		switch(*tmp){
+			//TODO: String with citation marks
+			/*case '"':
+				ParseValue:
+					switch(*++tmp){
+						case '\0':
+							return false;
+						case '"':
+							++tmp;
+							SKIP_SPACES();
+							if(*tmp=='\0') return true;
+							break;
+						default:
+							goto ParseValue;
+					}
+				break;*/
+
+			//String without citation marks
+			default: ParseValueRaw:
+				switch(*++tmp){
+					case ',':
+						{
+							char c = *intEnd;
+							*intEnd = '\0';
+							*tmp    = '\0';
+							parsePair(atoi(intBegin),strBegin,closureData);
+							*tmp    = ',';
+							*intEnd = c;
+						}
+
+						++tmp;
+
+						//Reset states, and begin parsing a new key-value
+						intBegin = NULL;
+						intEnd   = NULL;
+						strBegin = NULL;
+						goto ParseKeyValue;
+
+					case '\0':
+						{
+							char c = *intEnd;
+							*intEnd = '\0';
+							parsePair(atoi(intBegin),strBegin,closureData);
+							*intEnd = c;
+						}
+
+						return true;
+
+					default:
+						goto ParseValueRaw;
+				}
+				break;
+		}
+}
+
+bool writeTrackTitleClosure(int i,const char* title,void* data){
+	printf("%i , %p: \"%s\"\n",i,title,title?:"");
+	return true;
+}
 
 int main(int argc,const char* argv[]){
 	//Initialize variables
@@ -71,7 +208,7 @@ int main(int argc,const char* argv[]){
 			POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,
 			&write.title,
 			SHOW_TITLE,
-			"Title of nsf.",
+			"Title of nsf. Often used as the album name.",
 			"<string>"
 		},
 		{
@@ -107,8 +244,17 @@ int main(int argc,const char* argv[]){
 			POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,
 			&write.ripper,
 			SHOW_RIPPER,
-			"Region of nsf.",
+			"String of the ripper of the nsf.",
 			"<string>"
+		},
+		{
+			"tracktitles",
+			'T',
+			POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,
+			&write.trackTitles,
+			SHOW_TRACKTITLES,
+			"Titles of tracks.",
+			"<int>[:<string>][,..]"
 		},
 		{
 			"out",
@@ -116,7 +262,7 @@ int main(int argc,const char* argv[]){
 			POPT_ARG_STRING,
 			&filepath_out,
 			SHOW_OUTPUT,
-			"Output filepath.",
+			"Output filepath. This must be specified for changes to be written out.",
 			"<filepath>"
 		},
 		{
@@ -190,6 +336,8 @@ int main(int argc,const char* argv[]){
 				goto OptionLoop;
 			case SHOW_RIPPER:
 				show.ripper=true;
+			case SHOW_TRACKTITLES:
+				show.trackTitles=true;
 				goto OptionLoop;
 			case SHOW_TRACKCOUNT:
 				show.trackcount=true;
@@ -279,28 +427,37 @@ int main(int argc,const char* argv[]){
 			if(write.ripper)
 				strcpy(nsf.ripper,write.ripper);
 
+			if(write.trackTitles){
+				//Allocates and copies in case `write.trackTitles` must be (const char*)
+				char* tmp = malloc(strlen(write.trackTitles)+1);
+				if(tmp==NULL) return 1;
+				strcpy(tmp,write.trackTitles);
+
+				parseOptionalIntStrMap(tmp,writeTrackTitleClosure,NULL);
+			}
+
 			//Show
 			if(show.title)
 				puts(nsf.gameTitle?:EMPTY_STRING);
-			
+
 			if(show.region)
 				puts(nsf.info.region==1?"PAL":"NTSC");
-			
+
 			if(show.artist)
 				puts(nsf.artist?:EMPTY_STRING);
-			
+
 			if(show.copyright)
 				puts(nsf.copyright?:EMPTY_STRING);
-			
+
 			if(show.trackcount)
 				printf("%i\n",nsf.info.trackCount);
-			
+
 			if(show.initialtrack)
 				printf("%i\n",nsf.info.initialTrack);
-			
+
 			if(show.ripper)
 				puts(nsf.ripper?:EMPTY_STRING);
-			
+
 			if(show.extensions){
 				nsf_printChipExtensions(&nsf.info.chipExtensions,stdout);
 				putchar('\n');

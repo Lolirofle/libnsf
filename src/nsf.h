@@ -154,7 +154,7 @@ enum nsf_save_return{
  * Load a file to the nsf_data structure.
  * If loadData is false, the NSF code is not loaded, only the other information (like track times, game title, Author, etc).
  * If you're loading an NSF with intention to play it, loadData must be true.
- * This function will not assume that the nsf_data structure is filled with zeroes.
+ * This function will assume that the nsf_data structure have been initialized in beforehand.
  * The resulted nsf_data structure MUST ALWAYS be freed using nsf_free.
  *
  * @param nsf      Output, structure to write to.
