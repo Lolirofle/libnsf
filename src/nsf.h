@@ -92,7 +92,7 @@ struct __attribute__ ((__packed__)) nsfe_infoChunk{
 	uint8_t initialTrack;//The initial track (ZERO BASED:  0 = 1st track, 4 = 5th track, etc)
 };
 
-struct nsf_data{
+struct nsf_data{ //All pointers in this data structure must be owned (malloc'd, not pointing to subranges of other spaces, and does not let other code freeing the pointer)
 	//basic NSF info
 	struct nsfe_infoChunk info;
 

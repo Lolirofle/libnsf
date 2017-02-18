@@ -69,6 +69,7 @@ enum Show{
  * @param str         Input, to parse from.
  *                    Must be non-null and a null-terminated string.
  * @param parsePair   Parsing function to execute.
+ *                    The second argument is a pointer which may point to invalid data after the execution of parsePair.
  *                    Must be non-null.
  * @param closureData Passed to every execution of parsePair.
  */
@@ -191,9 +192,33 @@ bool parseOptionalIntStrMap(char* str,bool(*parsePair)(int,const char*,void*),vo
 		}
 }
 
-bool writeTrackTitleClosure(int i,const char* title,void* data){
-	printf("%i , %p: \"%s\"\n",i,title,title?:"");
-	return true;
+char* strcpyof(const char* str){
+	char* new = malloc(strlen(str));
+	if(new==NULL) return NULL;
+	strcpy(new,str);
+	return new;
+}
+
+struct TrackTitleClosureData{
+	char** titles;
+	uint8_t tracks;
+};
+bool trackTitleClosure(int i,const char* title,void* dat){
+	struct TrackTitleClosureData* data = dat;
+
+	if(0<=i && i<data->tracks){
+		//Write
+		if(title!=NULL){
+			if((data->titles[i] = strcpyof(title))==NULL) return false;
+		}
+
+		//Show
+		puts(data->titles[i]);
+
+		return true;
+	}else{
+		return false;
+	}
 }
 
 int main(int argc,const char* argv[]){
@@ -404,8 +429,9 @@ int main(int argc,const char* argv[]){
 			}
 		}else{
 			//Write
-			if(write.title)
-				strcpy(nsf.gameTitle,write.title);
+			if(write.title){
+				if((nsf.gameTitle = strcpyof(write.title))==NULL) return 1;
+			}
 
 			if(write.region){
 				if(strcmp(write.region,"NTSC")==0)
@@ -418,22 +444,21 @@ int main(int argc,const char* argv[]){
 				}
 			}
 
-			if(write.artist)
-				strcpy(nsf.artist,write.artist);
+			if(write.artist){
+				if((nsf.artist = strcpyof(write.artist))==NULL) return 1;
+			}
 
-			if(write.copyright)
-				strcpy(nsf.copyright,write.copyright);
+			if(write.copyright){
+				if((nsf.copyright = strcpyof(write.copyright))==NULL) return 1;
+			}
 
-			if(write.ripper)
-				strcpy(nsf.ripper,write.ripper);
+			if(write.ripper){
+				if((nsf.ripper = strcpyof(write.ripper))==NULL) return 1;
+			}
 
 			if(write.trackTitles){
-				//Allocates and copies in case `write.trackTitles` must be (const char*)
-				char* tmp = malloc(strlen(write.trackTitles)+1);
-				if(tmp==NULL) return 1;
-				strcpy(tmp,write.trackTitles);
-
-				parseOptionalIntStrMap(tmp,writeTrackTitleClosure,NULL);
+				struct TrackTitleClosureData data = {nsf.trackLabels,nsf.info.trackCount};//TODO: Is it possible that nsf.trackLabels=NULL?
+				parseOptionalIntStrMap(write.trackTitles,trackTitleClosure,&data);
 			}
 
 			//Show
